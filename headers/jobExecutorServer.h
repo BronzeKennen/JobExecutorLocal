@@ -1,0 +1,2 @@
+int serverInit();
+int serverClose();
