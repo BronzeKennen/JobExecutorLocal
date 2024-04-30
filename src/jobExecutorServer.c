@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+int concurrency = 1;
 int queue = 0;
 int jobId = 1;
 char* namedFifo = "bin/comfifo";
@@ -49,7 +50,7 @@ void issueJob(char* job) {
 }
 
 void setConcurrency(int n) {
-    printf("Attempting to set concurrency\n");
+    concurrency = n;
 }
 
 void jobStop(int jobId) {
@@ -71,15 +72,26 @@ int serverClose() {
 
 int main(int argc, char** argv) {
 
+    //Exits are for test purposes
     int fd;
     char buf[100];
     fd = open(namedFifo,O_RDONLY);
     while(1) {
-        read(fd,buf,10);
+        read(fd,buf,100);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
             exit(0);
-        }else if(strncmp(buf,"issueJob",8) == 0) {
+        } else if(strncmp(buf,"issueJob",8) == 0) {
+            issueJob(buf+8);
+            exit(0);
+        } else if(strncmp(buf,"setConcurrency",14) == 0) {
+           int con = atoi(buf+14); 
+           if(!con) {
+                printf("Error reading argument. Exiting\n");
+                exit(1);
+           }
+           setConcurrency(con);
+           exit(0);
         }
     }
     return 0;

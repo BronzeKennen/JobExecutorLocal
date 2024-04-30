@@ -39,15 +39,12 @@ int main(int argc, char** argv) {
 
     int fd;
 
-    fd = open(namedFifo,O_WRONLY | O_NONBLOCK);
+    fd = open(namedFifo,O_WRONLY );
 
     if(argc <=1) {
         printf("Usage: jobCommander  <command> \n");
         exit(1);
     }
-    int err = isUp();
-    printf("server = %d\n",err);
-    if(strncmp(argv[1],"issueJob",8) == 0) {
         size_t total_length = 0;
         for (int i = 1; i < argc; i++) {
             total_length += strlen(argv[i]);
@@ -61,14 +58,33 @@ int main(int argc, char** argv) {
             current_pos += strlen(argv[i]);
             concatenated[current_pos++] = ' ';
         }
+    // int err = isUp();
+    // printf("server = %d\n",err);
+    if(strncmp(argv[1],"issueJob",8) == 0) {
+        if(argc < 3) {
+            printf("Usage: jobCommander issueJob <command>\n");
+            exit(1); 
+        }
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
     } else if(strncmp(argv[1],"stop",4) == 0) {
         printf("Attempting to stop process _\n");
+    } else if(strncmp(argv[1],"setConcurrency",14) == 0){
+        if(argc < 3) {
+            printf("Usage: jobCommander setConcurrency <number>\n");
+            exit(1); 
+        }
+        int con = atoi(argv[2]);
+        if(!con) {
+            printf("Usage: jobCommander setConcurrency <number>\n");
+            exit(1);
+        }
+        printf("%s\n",concatenated);
+        write(fd,concatenated,strlen(concatenated));
     } else {
-        perror("Invalid argument.\n");
+        printf("Invalid argument.\n");
         exit(1);
     }
     close(fd);
