@@ -1,14 +1,11 @@
-jobexec: jobcomm.o jobexecserver.o jobexec.o
-	gcc jobCommander.o jobExecutorServer.o jobExecutor.o -o bin/jobexecutor
-
-jobcomm.o:
-	gcc -c src/jobCommander.c
+jobexec: jobexecserver.o 
+	gcc -Wall -Werror jobExecutorServer.o -o jobExecutorServer
+	gcc  -Wall -Werror src/jobCommander.c -o jobCommander
 
 jobexecserver.o:
 	gcc -c src/jobExecutorServer.c
 
-jobexec.o:
-	gcc -c src/jobExecutor.c
 
 run: jobexec
+	rm -f jobExecutorServer.txt
 	./bin/jobexecutor
