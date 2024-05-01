@@ -126,25 +126,23 @@ int main(int argc, char** argv) {
         perror("Failed to attach memory segment");
         return 1;
     }
-
-    serverInit(shmidA);
-    //Initialize Semaphores
     if (sem_init(semProc1, 1, 1) == -1) {
         perror("Failed to initialize semaphore");
     }
 
     sem_wait(semProc1);
+    serverInit(shmidA);
+    sem_post(semProc1);
+    printf("server: %d\n",*(int*)semProc1);
+    //Initialize Semaphores
     int fd;
     char buf[100]; //will change later
     char compbuf[100];
     strcpy(compbuf,"\0");
     fd = open(namedFifo,O_RDONLY);
     while(1) {
+        sem_wait(semProc1);
         read(fd,buf,100);
-        if(strncmp(buf,compbuf,strlen(buf)) == 0) {
-            continue;
-        }
-        strcpy(compbuf,buf);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
             break;
@@ -158,8 +156,7 @@ int main(int argc, char** argv) {
            }
            setConcurrency(con);
         }
-        memset(buf,0,100);
-        memset(compbuf,0,100);
+        sem_post(semProc1);
     }
     serverClose();
     return 0;

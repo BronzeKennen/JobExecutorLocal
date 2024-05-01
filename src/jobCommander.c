@@ -32,15 +32,13 @@ int isUp(int mode) {
             printf("Unable to retrieve server pid. Exiting... \n");
             exit(1);
         }
-        
-        return 0;
-    } 
-    if(mode == 0) {
-        printf("Server is not up. Starting server...");
+    }
+    if(mode == 0 && access(filename,F_OK) == -1) {
         char* args[]={server,NULL};
         execvp(server,args);
+        exit(0);
     }
-    exit(0);
+    return 0;
 }
 
 char* namedFifo = "/tmp/comfifo";
@@ -56,6 +54,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     } else if(pid == 0 ) {
         isUp(0);
+        exit(0);
     }
 
     shmidA = isUp(1);
@@ -71,6 +70,9 @@ int main(int argc, char** argv) {
 
     fd = open(namedFifo,O_WRONLY );
 
+    printf("%d\n",*(int*)semProc1);
+    sem_wait(semProc1);
+    printf("%d\n",*(int*)semProc1);
     if(argc <=1) {
         printf("Usage: jobCommander  <command> \n");
         exit(1);
@@ -95,10 +97,14 @@ int main(int argc, char** argv) {
         }
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
+        sem_post(semProc1);
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
+        sem_post(semProc1);
     } else if(strncmp(argv[1],"stop",4) == 0) {
         printf("Attempting to stop process _\n");
+        sem_post(semProc1);
+        printf("%d\n",*(int*)semProc1);
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){
         if(argc < 3) {
             printf("Usage: jobCommander setConcurrency <number>\n");
@@ -111,10 +117,12 @@ int main(int argc, char** argv) {
         }
         printf("%s\n",concatenated);
         write(fd,concatenated,strlen(concatenated));
+        sem_post(semProc1);
     } else {
         printf("Invalid argument.\n");
         exit(1);
     }
+    sem_wait(semProc1);
     close(fd);
     return 0;
 }
