@@ -6,48 +6,67 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <semaphore.h>
+#include <sys/shm.h>
+#include <sys/types.h>
 
+char* server = "./jobExecutorServer";
 const char* filename = "jobExecutorServer.txt";
 int serverPid;
-int isUp() {
+int isUp(int mode) {
     if(access(filename,F_OK) != -1) {
         int fd = open(filename,O_RDONLY);
-        char pid[10];
-        read(fd,pid,10);
-        serverPid = atoi(pid);
+        char pid[20];
+        char* token;
+        read(fd,pid,20);
+        strtok(pid,"\n");
+        token = strtok(NULL,"\n");
+        if(!token) {
+            printf("wtf\n");
+            exit(2);
+        }
+        serverPid = atoi(token);
         close(fd);
+        return serverPid;
         if(!serverPid) {
             printf("Unable to retrieve server pid. Exiting... \n");
             exit(1);
         }
         
         return 0;
+    } 
+    if(mode == 0) {
+        printf("Server is not up. Starting server...");
+        char* args[]={server,NULL};
+        execvp(server,args);
     }
-    printf("Unable to find server file. Exiting... \n");
-    exit(1);
+    exit(0);
 }
 
-char* namedFifo = "bin/comfifo";
+char* namedFifo = "/tmp/comfifo";
 
 int main(int argc, char** argv) {
 
+    int shmidA;
+    sem_t *semProc1;
     pid_t pid;
     pid = fork();
     if(pid == -1) {
         printf("Error on fork\n");
         exit(EXIT_FAILURE);
     } else if(pid == 0 ) {
-        exit(0);
+        isUp(0);
     }
+
+    shmidA = isUp(1);
+    semProc1 = (sem_t *) shmat(shmidA, NULL, 0); //kanw attach to shared memory tou allou process
+	if (semProc1 == (void *) -1) {
+		perror("Attachment."); 
+		exit(2);
+	}
 
     mkfifo(namedFifo,0666);
 
-    int error = isUp();
-    printf("code: %d\n",error);
-    if(error) {
-        printf("Unable to find server file. Exiting... \n");
-        exit(1);
-    }
     int fd;
 
     fd = open(namedFifo,O_WRONLY );

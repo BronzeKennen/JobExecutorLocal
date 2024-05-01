@@ -1,4 +1,5 @@
 jobexec: jobexecserver.o 
+	rm -f jobExecutorServer.txt
 	gcc -Wall -Werror jobExecutorServer.o -o jobExecutorServer
 	gcc  -Wall -Werror src/jobCommander.c -o jobCommander
 

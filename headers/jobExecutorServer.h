@@ -9,3 +9,14 @@ typedef struct job {
     char* job; //task
     int qPos; // queue position
 } jProperties;
+
+typedef struct priorityQueueNode {
+    jProperties *data;
+    struct priorityQueueNode *next;
+} pqNode;
+
+typedef struct priorityQueue { 
+    pqNode *first;
+    pqNode *last;
+    int size;
+} pQueue;
