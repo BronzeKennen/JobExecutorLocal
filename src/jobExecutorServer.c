@@ -4,30 +4,38 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h> 
 
 int concurrency = 1;
 int queue = 0;
 int jobId = 1;
+
 char* namedFifo = "bin/comfifo";
+const char* filename = "jobExecutorServer.txt";
+
 int serverInit() {
-    //Sometimes opening the file fails dk why doesn't throw an error
-    char* filename = "jobExecutorServer.txt";
     int pid = getpid(); 
 
-    int fp = open(filename,O_WRONLY | O_CREAT);
-    if(!fp) {
-        printf("Error opening file. \n");
-        return -1;
+    int fp = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if(fp == -1) {
+        printf("Error opening file. Attempting to restart...\n");
+        remove(filename);
+        serverInit();
+        return 1;
     } 
+
+    if (flock(fp, LOCK_EX) == -1) {
+        perror("Error locking file");
+        close(fp);
+        return -1;
+    }
 
     printf("\n--===Server is up on pid: %d===--\n",pid);
     char strpid[20];
-    sprintf(strpid,"%d",pid);
-    char* buf = malloc(sizeof(strlen(strpid)));
-    sprintf(buf,"%d",pid);
-    write(fp,buf,sizeof(buf));
+    snprintf(strpid,sizeof(strpid),"%d\n",pid);
+    int err = write(fp,strpid,strlen(strpid));
+    flock(fp,LOCK_UN);
     close(fp);
-    free(buf);
 }
 
 
@@ -65,7 +73,7 @@ void print(int mode) {
     }
 }
 int serverClose() {
-    remove("jobExecutorServer.txt");
+    remove(filename);
     printf("\n--===Server has been terminated===--\n");
     return 0;
 }
@@ -73,6 +81,7 @@ int serverClose() {
 int main(int argc, char** argv) {
 
     //Exits are for test purposes
+    serverInit();
     int fd;
     char buf[100];
     fd = open(namedFifo,O_RDONLY);
@@ -80,19 +89,20 @@ int main(int argc, char** argv) {
         read(fd,buf,100);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
-            exit(0);
+            break;
         } else if(strncmp(buf,"issueJob",8) == 0) {
             issueJob(buf+8);
-            exit(0);
+            break;
         } else if(strncmp(buf,"setConcurrency",14) == 0) {
            int con = atoi(buf+14); 
            if(!con) {
                 printf("Error reading argument. Exiting\n");
-                exit(1);
+                break;
            }
            setConcurrency(con);
-           exit(0);
+           break;
         }
     }
+    serverClose();
     return 0;
 }

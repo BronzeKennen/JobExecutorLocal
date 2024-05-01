@@ -7,19 +7,24 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-
-
+const char* filename = "jobExecutorServer.txt";
+int serverPid;
 int isUp() {
-    int fd = open("jobExecutorServer.txt",O_RDONLY);
-    if(fd) {
+    if(access(filename,F_OK) != -1) {
+        int fd = open(filename,O_RDONLY);
         char pid[10];
         read(fd,pid,10);
-        printf("%s\n",pid);
+        serverPid = atoi(pid);
         close(fd);
+        if(!serverPid) {
+            printf("Unable to retrieve server pid. Exiting... \n");
+            exit(1);
+        }
+        
         return 0;
-    } else {
-        return 1;
     }
+    printf("Unable to find server file. Exiting... \n");
+    exit(1);
 }
 
 char* namedFifo = "bin/comfifo";
@@ -37,6 +42,12 @@ int main(int argc, char** argv) {
 
     mkfifo(namedFifo,0666);
 
+    int error = isUp();
+    printf("code: %d\n",error);
+    if(error) {
+        printf("Unable to find server file. Exiting... \n");
+        exit(1);
+    }
     int fd;
 
     fd = open(namedFifo,O_WRONLY );
@@ -58,8 +69,6 @@ int main(int argc, char** argv) {
             current_pos += strlen(argv[i]);
             concatenated[current_pos++] = ' ';
         }
-    // int err = isUp();
-    // printf("server = %d\n",err);
     if(strncmp(argv[1],"issueJob",8) == 0) {
         if(argc < 3) {
             printf("Usage: jobCommander issueJob <command>\n");
