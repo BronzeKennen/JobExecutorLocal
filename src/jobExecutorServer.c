@@ -22,7 +22,15 @@ const char* filename = "jobExecutorServer.txt";
 // Table with all processes (RUNNING/QUEUED)
 // Stack with queued processes only (POP ONLY FIRST)
 
-pQueue* procTable;
+pQueue procTable;
+pQueue qInit() {
+    pQueue q = malloc(sizeof(*q));
+    q->size = 0;
+    q->first = NULL;
+    q->last = NULL;
+}
+
+
 int serverInit(int shmid) {
     int pid = getpid(); 
 
@@ -40,10 +48,6 @@ int serverInit(int shmid) {
         return -1;
     }
 
-    procTable = malloc(sizeof(pQueue));
-    procTable->size = 0;
-    procTable->first = NULL;
-    procTable->last = NULL;
 
     printf("\n--===Server is up on pid: %d===--\n",pid);
     char strpid[20];
@@ -56,40 +60,49 @@ int serverInit(int shmid) {
 
 
 void issueJob(char* job) {
-    if(procTable->first) printf("before: %s\n",procTable->first->data->job);
-    jProperties *new;
-    new = malloc(sizeof(jProperties));
+    jProperties *new = malloc(sizeof(jProperties));
     char jobString[7];
-
     sprintf(jobString,"job_%d",jobId);
-
-    new->jobId = malloc(sizeof(jobString)*sizeof(char));
-    new->jobId = jobString;
+    new->jobId = malloc(strlen(jobString));
+    strncpy(new->jobId,jobString,strlen(jobString));
     jobId++;
-    new->job = malloc(sizeof(job));
-    new->job = job;
+    new->job = malloc(strlen(job));
+    strncpy(new->job,job,strlen(job));
     new->qPos = queue++;
+
     if(procTable->first == NULL) {
-        procTable->first = malloc(sizeof(pqNode));
+        procTable->first = malloc(sizeof(*procTable->first));
+        procTable->first->data = malloc(sizeof(jProperties));
         procTable->first->data = new;
-    } else if(procTable->last == NULL) {
-        procTable->last = malloc(sizeof(pqNode));
+        procTable->last = malloc(sizeof(*procTable->last));
+        procTable->last->data = malloc(sizeof(jProperties));
         procTable->last->data = new;
-    } else {    
-        procTable->last->next = malloc(sizeof(pqNode));
+        //Initialize first and last nodes
+    } else if(procTable->first->data->qPos == procTable->last->data->qPos) {
+        procTable->last->data = new;
+        procTable->first->next = malloc(sizeof(*procTable->first->next));
+        procTable->first->next = procTable->last;
+        //second element is last on list, and next one after first
+    } else if(procTable->last->next == NULL) {    
+        procTable->last->next = malloc(sizeof(*procTable->last->next));
+        procTable->last->next->data = new;
         procTable->last = procTable->last->next;
-        procTable->last->data = new;
+        //whichever element enters is now last, therefore next of the previous last
     }
-    // printf("%p\n",new);
-    // printf("%p\n",procTable->first->data);
-    procTable->size++;
-    pqNode *testProc = procTable->first;
-    for(int i = 0; i < procTable->size; i++) {
-        printf("->%d\n",procTable->size);
-        printf("%s\n",testProc->data->job);
-        testProc = testProc->next;
-        if(testProc == NULL) break;
-    }
+    //debug
+    // pqNode s = procTable->first;
+    // printf("%s,%s,%d\n",s->data->job,s->data->jobId,s->data->qPos);
+    // if(s) {
+        // for(int i = 0; i < queue; i++) {
+            // printf("%d: %s,%s,%d\n",i,s->data->job,s->data->jobId,s->data->qPos);
+            // s = s->next;
+            // if(!s) break;
+        // }
+    // }
+}
+
+void execLoop() {
+
 }
 
 void setConcurrency(int n) {
@@ -114,34 +127,23 @@ int serverClose() {
 }
 
 int main(int argc, char** argv) {
-
-    //Exits are for test purposes
-    sem_t *semProc1;
-    int shmidA;
-    if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t), (S_IRUSR|S_IWUSR))) == -1) { 
-        perror("Failed to create shared memory segment");
-        return 1;
+    pid_t pid;
+    pid = fork();
+    if(pid == -1) {
+        printf("Ford error\n");
+        exit(EXIT_FAILURE);
     }
-    if ((semProc1 = shmat(shmidA, NULL, 0)) == (void *)-1) {
-        perror("Failed to attach memory segment");
-        return 1;
-    }
-    if (sem_init(semProc1, 1, 1) == -1) {
-        perror("Failed to initialize semaphore");
+    if(pid == 0) {
+        //mwah
     }
 
-    sem_wait(semProc1);
-    serverInit(shmidA);
-    sem_post(semProc1);
-    printf("server: %d\n",*(int*)semProc1);
-    //Initialize Semaphores
+    procTable = qInit();
+
+    serverInit(123);
     int fd;
     char buf[100]; //will change later
-    char compbuf[100];
-    strcpy(compbuf,"\0");
     fd = open(namedFifo,O_RDONLY);
     while(1) {
-        sem_wait(semProc1);
         read(fd,buf,100);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
@@ -156,7 +158,8 @@ int main(int argc, char** argv) {
            }
            setConcurrency(con);
         }
-        sem_post(semProc1);
+        memset(buf,0,100);
+        execLoop();
     }
     serverClose();
     return 0;

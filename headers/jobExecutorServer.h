@@ -1,9 +1,3 @@
-int serverInit();
-int serverClose();
-
-void issueJob(char*);
-void setConcurrency(int);
-void jobStop(int);
 typedef struct job {
     char* jobId; //job_XX {XX} jobNumber
     char* job; //task
@@ -13,10 +7,17 @@ typedef struct job {
 typedef struct priorityQueueNode {
     jProperties *data;
     struct priorityQueueNode *next;
-} pqNode;
+} *pqNode;
 
 typedef struct priorityQueue { 
-    pqNode *first;
-    pqNode *last;
+    pqNode first;
+    pqNode last;
     int size;
-} pQueue;
+} *pQueue;
+
+int serverInit(int);
+int serverClose();
+
+void issueJob(char*);
+void setConcurrency(int);
+void jobStop(int);
