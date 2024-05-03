@@ -135,6 +135,7 @@ int main(int argc, char** argv) {
     }
     if(pid == 0) {
         //mwah
+        exit(0);
     }
 
     procTable = qInit();
