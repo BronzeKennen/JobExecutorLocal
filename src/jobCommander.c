@@ -72,7 +72,6 @@ int main(int argc, char** argv) {
             exit(1); 
         }
         concatenated[current_pos - 1] = '\0';
-        printf("issued\n");
         write(fd,concatenated,strlen(concatenated));
         if(serverPid) kill(serverPid,10);
     } else if(strncmp(argv[1],"exit",4) == 0) {

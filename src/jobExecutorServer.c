@@ -104,16 +104,38 @@ void issueJob(char* job) {
 }
 
 void runQueueItem() {
+
     pid_t pid;
-    int fd;
     pid = fork();
     if(pid != 0) return;
-    printf("child proc\n");
+    if(pid == -1) {
+        printf("fork\n");
+        exit(EXIT_FAILURE);
+    }
+
     char buffer[100];
-    fd = open(execFifo,O_RDONLY | O_NONBLOCK);
+    char* args[100];
+    int fd;
+    fd = open(execFifo,O_RDONLY);
+    if(fd == -1) {
+        printf("open error\n");
+        exit(EXIT_FAILURE); 
+    }
     read(fd,buffer,100);
-    printf("->%s\n",buffer);
-    exit(0);
+
+    char* token = strtok(buffer," ");
+    int i = 0;
+    while(token) {
+        args[i++] = token;
+        token = strtok(NULL," ");
+
+    }
+    args[i] = NULL;
+
+    execvp(args[0],args);
+
+    perror("execvp");
+    exit(EXIT_FAILURE);
     
 }
 
@@ -143,6 +165,7 @@ int execfd;
 void sig_handler(int signo) {
     char buf[100]; //will change later
     if(signo == SIGUSR1) {
+        memset(buf,0,100);
         read(fd,buf,100);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
@@ -164,12 +187,12 @@ void sig_handler(int signo) {
 
 int main(int argc, char** argv) {
     mkfifo(execFifo,0666);
-    execfd = open(execFifo,O_WRONLY | O_NONBLOCK);
+    execfd = open(execFifo,O_RDWR | O_NONBLOCK);
 
     procTable = qInit();
 
-    if (signal(SIGUSR1, sig_handler) == SIG_ERR) { // Here, we set sig_handler as the handler for SIGUSR1
-        printf("Error registering signal handler\n");
+    if (signal(SIGUSR1, sig_handler) == SIG_ERR) { 
+        printf("handler error\n");
         return 1;
     }
     fd = open(namedFifo,O_RDONLY | O_NONBLOCK);
