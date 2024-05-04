@@ -21,6 +21,8 @@ char* namedFifo = "/tmp/comfifo";
 char* execFifo = "/tmp/execfifo";
 const char* filename = "jobExecutorServer.txt";
 
+int execfd;
+int fd;
 
 // Table with all processes (RUNNING/QUEUED)
 // Stack with queued processes only (POP ONLY FIRST)
@@ -33,6 +35,15 @@ pQueue qInit() {
     q->last = NULL;
 }
 
+void pqPopFirst() {
+    // free(procTable->first->data);
+    if(procTable->first->next) {
+        procTable->first = procTable->first->next;
+    } else {
+        // free(procTable->first);
+        procTable->first = NULL;
+    }
+}
 
 int serverInit() {
     int pid = getpid(); 
@@ -115,6 +126,8 @@ void runQueueItem() {
 
     char buffer[100];
     char* args[100];
+    memset(args,0,100);
+    memset(buffer,0,100);
     int fd;
     fd = open(execFifo,O_RDONLY);
     if(fd == -1) {
@@ -131,7 +144,6 @@ void runQueueItem() {
 
     }
     args[i] = NULL;
-
     execvp(args[0],args);
 
     perror("execvp");
@@ -139,6 +151,17 @@ void runQueueItem() {
     
 }
 
+
+void executionCheck() {
+    if(!queue) return;
+    if((queue-1) < concurrency) {
+        pqNode toExec = procTable->first;
+        write(execfd,toExec->data->job,strlen(toExec->data->job));
+        runQueueItem();
+        wait(NULL);
+    }
+    printf("monkaS\n");
+}
 void setConcurrency(int n) {
     concurrency = n;
 }
@@ -160,8 +183,6 @@ int serverClose() {
     exit(0);
 }
 
-int execfd;
-    int fd;
 void sig_handler(int signo) {
     char buf[100]; //will change later
     if(signo == SIGUSR1) {
@@ -172,9 +193,7 @@ void sig_handler(int signo) {
             serverClose();
         } else if(strncmp(buf,"issueJob",8) == 0) {
             issueJob(buf+8);
-            write(execfd,buf+8,strlen(buf+8));
-            runQueueItem();
-            wait(NULL);
+            executionCheck();
         } else if(strncmp(buf,"setConcurrency",14) == 0) {
             int con = atoi(buf+14); 
             if(!con) {
@@ -185,6 +204,15 @@ void sig_handler(int signo) {
     }
 }
 
+void chld_handler(int signo) {
+    if(signo == SIGCHLD) {
+        printf("Job finished!\n");
+        queue--;
+        pqPopFirst();
+        executionCheck();
+    }
+}
+
 int main(int argc, char** argv) {
     mkfifo(execFifo,0666);
     execfd = open(execFifo,O_RDWR | O_NONBLOCK);
@@ -192,6 +220,10 @@ int main(int argc, char** argv) {
     procTable = qInit();
 
     if (signal(SIGUSR1, sig_handler) == SIG_ERR) { 
+        printf("handler error\n");
+        return 1;
+    }
+    if (signal(SIGCHLD, chld_handler) == SIG_ERR) { 
         printf("handler error\n");
         return 1;
     }
