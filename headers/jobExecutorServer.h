@@ -15,7 +15,7 @@ typedef struct priorityQueue {
     int size;
 } *pQueue;
 
-int serverInit(int);
+int serverInit();
 int serverClose();
 
 void issueJob(char*);

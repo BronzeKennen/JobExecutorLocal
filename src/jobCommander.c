@@ -9,29 +9,21 @@
 #include <semaphore.h>
 #include <sys/shm.h>
 #include <sys/types.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 char* server = "./jobExecutorServer";
 const char* filename = "jobExecutorServer.txt";
-int serverPid;
+int serverPid = 0;
 int isUp(int mode) {
-    if(access(filename,F_OK) != -1) {
+    if(access(filename,F_OK) != -1 && mode == 1) {
         int fd = open(filename,O_RDONLY);
         char pid[20];
-        char* token;
         read(fd,pid,20);
-        strtok(pid,"\n");
-        token = strtok(NULL,"\n");
-        if(!token) {
-            exit(2);
-        }
-        serverPid = atoi(token);
+        serverPid = atoi(pid);
         close(fd);
         return serverPid;
-        if(!serverPid) {
-            printf("Unable to retrieve server pid. Exiting... \n");
-            exit(1);
-        }
-    }
+    } 
     if(mode == 0 && access(filename,F_OK) == -1) {
         char* args[]={server,NULL};
         execvp(server,args);
@@ -53,15 +45,19 @@ int main(int argc, char** argv) {
         if(strncmp(argv[1],"exit",4) == 0) exit(0);
         isUp(0);
         exit(0);
+    }   
+
+    pid_t serverPid = isUp(1);
+    while(!serverPid) {
+        serverPid = isUp(1);
     }
     mkfifo(namedFifo,0666);
     int fd;
-    fd = open(namedFifo,O_WRONLY | O_NONBLOCK );
+    fd = open(namedFifo,O_WRONLY);
     size_t total_length = 0;
     for (int i = 1; i < argc; i++) {
         total_length += strlen(argv[i]);
     }
-
     char *concatenated = (char*)malloc(total_length + argc);
 
     size_t current_pos = 0;
@@ -76,9 +72,13 @@ int main(int argc, char** argv) {
             exit(1); 
         }
         concatenated[current_pos - 1] = '\0';
+        printf("issued\n");
         write(fd,concatenated,strlen(concatenated));
+        if(serverPid) kill(serverPid,10);
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
+        if(serverPid) kill(serverPid,10);
+        
     } else if(strncmp(argv[1],"stop",4) == 0) {
         printf("Attempting to stop process _\n");
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){

@@ -10,12 +10,15 @@
 #include <sys/shm.h>
 #include <sys/types.h> 
 #include <sys/file.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 int concurrency = 1;
 int queue = 0;
 int jobId = 1;
 
 char* namedFifo = "/tmp/comfifo";
+char* execFifo = "/tmp/execfifo";
 const char* filename = "jobExecutorServer.txt";
 
 
@@ -31,31 +34,30 @@ pQueue qInit() {
 }
 
 
-int serverInit(int shmid) {
+int serverInit() {
     int pid = getpid(); 
 
     int fp = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if(fp == -1) {
         printf("Error opening file. Attempting to restart...\n");
         remove(filename);
-        serverInit(shmid);
+        serverInit();
         return 1;
     } 
-
     if (flock(fp, LOCK_EX) == -1) {
         perror("Error locking file");
         close(fp);
         return -1;
     }
+    char strpid[20];
+    snprintf(strpid,sizeof(strpid),"%d",pid);
+    int err = write(fp,strpid,strlen(strpid));
+    flock(fp,LOCK_UN);
 
 
     printf("\n--===Server is up on pid: %d===--\n",pid);
-    char strpid[20];
-    snprintf(strpid,sizeof(strpid)+sizeof(shmid),"%d\n%d",pid,shmid);
-    printf("%s\n",strpid);
-    int err = write(fp,strpid,strlen(strpid));
-    flock(fp,LOCK_UN);
     close(fp);
+    return 0;
 }
 
 
@@ -101,8 +103,18 @@ void issueJob(char* job) {
     // }
 }
 
-void execLoop() {
-
+void runQueueItem() {
+    pid_t pid;
+    int fd;
+    pid = fork();
+    if(pid != 0) return;
+    printf("child proc\n");
+    char buffer[100];
+    fd = open(execFifo,O_RDONLY | O_NONBLOCK);
+    read(fd,buffer,100);
+    printf("->%s\n",buffer);
+    exit(0);
+    
 }
 
 void setConcurrency(int n) {
@@ -123,45 +135,47 @@ void print(int mode) {
 int serverClose() {
     remove(filename);
     printf("\n--===Server has been terminated===--\n");
-    return 0;
+    exit(0);
 }
 
-int main(int argc, char** argv) {
-    pid_t pid;
-    pid = fork();
-    if(pid == -1) {
-        printf("Ford error\n");
-        exit(EXIT_FAILURE);
-    }
-    if(pid == 0) {
-        //mwah
-        exit(0);
-    }
-
-    procTable = qInit();
-
-    serverInit(123);
+int execfd;
     int fd;
+void sig_handler(int signo) {
     char buf[100]; //will change later
-    fd = open(namedFifo,O_RDONLY);
-    while(1) {
+    if(signo == SIGUSR1) {
         read(fd,buf,100);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
-            break;
+            serverClose();
         } else if(strncmp(buf,"issueJob",8) == 0) {
             issueJob(buf+8);
+            write(execfd,buf+8,strlen(buf+8));
+            runQueueItem();
+            wait(NULL);
         } else if(strncmp(buf,"setConcurrency",14) == 0) {
-           int con = atoi(buf+14); 
-           if(!con) {
+            int con = atoi(buf+14); 
+            if(!con) {
                 printf("Error reading argument. Exiting\n");
-                break;
-           }
-           setConcurrency(con);
+            }
+            setConcurrency(con);
         }
-        memset(buf,0,100);
-        execLoop();
     }
-    serverClose();
+}
+
+int main(int argc, char** argv) {
+    mkfifo(execFifo,0666);
+    execfd = open(execFifo,O_WRONLY | O_NONBLOCK);
+
+    procTable = qInit();
+
+    if (signal(SIGUSR1, sig_handler) == SIG_ERR) { // Here, we set sig_handler as the handler for SIGUSR1
+        printf("Error registering signal handler\n");
+        return 1;
+    }
+    fd = open(namedFifo,O_RDONLY | O_NONBLOCK);
+    serverInit();
+    while(1) {
+
+    }
     return 0;
 }
