@@ -20,4 +20,4 @@ int serverClose();
 
 void issueJob(char*);
 void setConcurrency(int);
-void jobStop(int);
+void jobStop(char*);

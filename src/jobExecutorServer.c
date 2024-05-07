@@ -15,6 +15,7 @@
 
 int concurrency = 1;
 int queue = 0;
+int running = 0;
 int jobId = 1;
 
 char* namedFifo = "/tmp/comfifo";
@@ -36,23 +37,45 @@ pQueue qInit() {
 }
 
 void pqPopFirst() {
-    // free(procTable->first->data);
+    free(procTable->first->data);
     if(procTable->first->next) {
         procTable->first = procTable->first->next;
     } else {
-        // free(procTable->first);
+        free(procTable->first);
         procTable->first = NULL;
     }
 }
 
-int serverInit() {
+pqNode pqFindJob(char* jobId) {
+    pqNode node = procTable->first;
+    for(int i = 0; i < procTable->size; i++) {
+        if(node->data->jobId == jobId) return node;
+        node = node->next;
+
+    }
+}
+
+void pqRemove(pqNode node) {
+    pqNode f = procTable->first;
+    if(node == f) pqPopFirst;
+    pqNode s = procTable->first->next;
+    for(int i = 0; i < procTable->size-1; i++) {
+        if(s == node) {
+            f->next = s->next;
+        }
+        f = f->next;
+        s = s->next;
+    }
+}
+
+int serverInit(int shmid) {
     int pid = getpid(); 
 
     int fp = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if(fp == -1) {
         printf("Error opening file. Attempting to restart...\n");
         remove(filename);
-        serverInit();
+        serverInit(shmid);
         return 1;
     } 
     if (flock(fp, LOCK_EX) == -1) {
@@ -61,7 +84,7 @@ int serverInit() {
         return -1;
     }
     char strpid[20];
-    snprintf(strpid,sizeof(strpid),"%d",pid);
+    snprintf(strpid,sizeof(strpid),"%d\n%d",pid,shmid);
     int err = write(fp,strpid,strlen(strpid));
     flock(fp,LOCK_UN);
 
@@ -71,6 +94,9 @@ int serverInit() {
     return 0;
 }
 
+void setConcurrency(int n) {
+    concurrency = n;
+}
 
 void issueJob(char* job) {
     jProperties *new = malloc(sizeof(jProperties));
@@ -102,6 +128,8 @@ void issueJob(char* job) {
         procTable->last = procTable->last->next;
         //whichever element enters is now last, therefore next of the previous last
     }
+    printf("Job has been issued on queue with id: %s\n",new->jobId);
+    procTable->size++;
     //debug
     // pqNode s = procTable->first;
     // printf("%s,%s,%d\n",s->data->job,s->data->jobId,s->data->qPos);
@@ -113,16 +141,14 @@ void issueJob(char* job) {
         // }
     // }
 }
+void runQueueItem(pid_t* pid) {
 
-void runQueueItem() {
-
-    pid_t pid;
-    pid = fork();
-    if(pid != 0) return;
-    if(pid == -1) {
+    *pid = fork();
+    if(*pid == -1) {
         printf("fork\n");
         exit(EXIT_FAILURE);
     }
+    if(*pid != 0) return;
 
     char buffer[100];
     char* args[100];
@@ -151,23 +177,24 @@ void runQueueItem() {
     
 }
 
-
 void executionCheck() {
+    int status;
+    pid_t pid;
     if(!queue) return;
-    if((queue-1) < concurrency) {
+    if(running < concurrency) {
         pqNode toExec = procTable->first;
         write(execfd,toExec->data->job,strlen(toExec->data->job));
-        runQueueItem();
-        wait(NULL);
-    }
-    printf("monkaS\n");
-}
-void setConcurrency(int n) {
-    concurrency = n;
+        printf("run Proc %d|con %d\n",running++,concurrency);
+
+        runQueueItem(&pid);
+    } 
 }
 
-void jobStop(int jobId) {
-    printf("Stopping process %d\n",jobId);
+
+void jobStop(char* jobId) {
+    pqNode toFind = pqFindJob(jobId);
+    printf("%s,%s,%d\n",toFind->data->job,toFind->data->jobId,toFind->data->qPos);
+
 }
 
 void print(int mode) {
@@ -183,11 +210,56 @@ int serverClose() {
     exit(0);
 }
 
-void sig_handler(int signo) {
+
+void chld_handler(int signo) {
+    if(signo == SIGCHLD) {
+        printf("Job finished!\n");
+        queue--;
+        running--;
+        pqPopFirst();
+        executionCheck();
+    }
+}
+
+
+int main(int argc, char** argv) {
+    int shmidA;
+    sem_t *semProc1;
+    if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t)*2 + 15, (S_IRUSR|S_IWUSR))) == -1) { //desmevw 50 theseis se afti ti periptwsi char gia testing
+        perror("Failed to create shared memory segment");
+        return 1;
+    } else {
+        printf("shmidA: %d\n",shmidA);
+    }
+    serverInit(shmidA);
+    if ((semProc1 = shmat(shmidA, NULL, 0)) == (void *)-1) {
+        perror("Failed to attach memory segment");
+        return 1;
+    }
+    if (sem_init(semProc1, 1, 0) == -1) {
+        perror("Failed to initialize semaphore");
+    } else {
+        printf("Created semProc1\n");
+    }
+
+    mkfifo(execFifo,0666);
+    execfd = open(execFifo,O_RDWR | O_NONBLOCK);
+    procTable = qInit();
+    // if (signal(SIGUSR1, sig_handler) == SIG_ERR) { 
+        // printf("handler error\n");
+        // return 1;
+    // }
+    if (signal(SIGCHLD, chld_handler) == SIG_ERR) { 
+        printf("handler error\n");
+        return 1;
+    }
+    fd = open(namedFifo,O_RDONLY | O_NONBLOCK);
     char buf[100]; //will change later
-    if(signo == SIGUSR1) {
+    while(1) {
+        sem_wait(semProc1);
         memset(buf,0,100);
         read(fd,buf,100);
+        printf("%s\n",buf);
         if(strncmp(buf,"1",1) == 0) {
             printf("Server is shutting down...\n");
             serverClose();
@@ -200,37 +272,10 @@ void sig_handler(int signo) {
                 printf("Error reading argument. Exiting\n");
             }
             setConcurrency(con);
+            executionCheck();
+        } else if(strncmp(buf,"stop",4) == 0) {
+            jobStop(buf+4);            
         }
-    }
-}
-
-void chld_handler(int signo) {
-    if(signo == SIGCHLD) {
-        printf("Job finished!\n");
-        queue--;
-        pqPopFirst();
-        executionCheck();
-    }
-}
-
-int main(int argc, char** argv) {
-    mkfifo(execFifo,0666);
-    execfd = open(execFifo,O_RDWR | O_NONBLOCK);
-
-    procTable = qInit();
-
-    if (signal(SIGUSR1, sig_handler) == SIG_ERR) { 
-        printf("handler error\n");
-        return 1;
-    }
-    if (signal(SIGCHLD, chld_handler) == SIG_ERR) { 
-        printf("handler error\n");
-        return 1;
-    }
-    fd = open(namedFifo,O_RDONLY | O_NONBLOCK);
-    serverInit();
-    while(1) {
-
     }
     return 0;
 }

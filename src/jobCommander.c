@@ -24,6 +24,15 @@ int isUp(int mode) {
         close(fd);
         return serverPid;
     } 
+    if(access(filename,F_OK) != -1 && mode == 2) {
+        int fd = open(filename,O_RDONLY);
+        char pid[20];
+        read(fd,pid,20);
+        char* token = strtok(pid,"\n");
+        token = strtok(NULL,"\n");
+        int shmid = atoi(token);
+        return shmid;
+    }
     if(mode == 0 && access(filename,F_OK) == -1) {
         char* args[]={server,NULL};
         execvp(server,args);
@@ -35,6 +44,9 @@ int isUp(int mode) {
 char* namedFifo = "/tmp/comfifo";
 
 int main(int argc, char** argv) {
+
+    int shmidA;
+
 
     pid_t pid;
     pid = fork();
@@ -51,6 +63,14 @@ int main(int argc, char** argv) {
     while(!serverPid) {
         serverPid = isUp(1);
     }
+    shmidA = isUp(2);
+	sem_t * semProc1 = (sem_t *) shmat(shmidA, NULL, 0); //kanw attach to shared memory tou allou process
+	if (semProc1 == (void *) -1) {
+		perror("Attachment."); 
+		exit(2);
+	}
+
+    //Initialize Semaphores
     mkfifo(namedFifo,0666);
     int fd;
     fd = open(namedFifo,O_WRONLY);
@@ -73,13 +93,11 @@ int main(int argc, char** argv) {
         }
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
-        if(serverPid) kill(serverPid,10);
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
-        if(serverPid) kill(serverPid,10);
         
     } else if(strncmp(argv[1],"stop",4) == 0) {
-        printf("Attempting to stop process _\n");
+        write(fd,concatenated,strlen(concatenated));
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){
         if(argc < 3) {
             printf("Usage: jobCommander setConcurrency <number>\n");
@@ -92,12 +110,12 @@ int main(int argc, char** argv) {
             close(fd);
             return 1;
         }
-        printf("%s\n",concatenated);
         write(fd,concatenated,strlen(concatenated));
     } else {
         printf("Invalid argument.\n");
         exit(1);
     }
+    sem_post(semProc1);
     close(fd);
     return 0;
 }
