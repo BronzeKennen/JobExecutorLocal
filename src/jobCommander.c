@@ -111,6 +111,8 @@ int main(int argc, char** argv) {
             return 1;
         }
         write(fd,concatenated,strlen(concatenated));
+    } else if(strncmp(argv[1],"poll",4) == 0) {
+        write(fd,concatenated,strlen(concatenated));  
     } else {
         printf("Invalid argument.\n");
         exit(1);

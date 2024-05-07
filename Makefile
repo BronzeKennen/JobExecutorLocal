@@ -1,11 +1,14 @@
-jobexec: jobexecserver.o 
+jobexec: jobexecserver.o  pq.o
 	rm -f jobExecutorServer.txt
-	gcc -Wall -Werror jobExecutorServer.o -o jobExecutorServer
+	gcc -Wall -Werror jobExecutorServer.o pq.o -o jobExecutorServer
 	gcc  -Wall -Werror src/jobCommander.c -o jobCommander
+	killall jobExecutorServer
 
-jobexecserver.o:
+jobexecserver.o: pq.o
 	gcc -c src/jobExecutorServer.c
 
+pq.o:
+	gcc -c src/pq.c
 
 run: jobexec
 	rm -f jobExecutorServer.txt
