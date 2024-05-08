@@ -41,6 +41,15 @@ pqNode pqFindJob(char* jobId, pQueue q) {
     }
 }
 
+pqNode pqFindProc(int pid, pQueue q) {
+    pqNode node = q->first;
+    runningJobs* data = (runningJobs*)node->data;
+    for(int i = 0; i < q->size; i++) {
+        if(pid == data->pid) return node;
+        node = node->next;
+
+    }
+}
 pQueue runningProcs;
 int serverInit(int shmid) {
     int pid = getpid(); 
@@ -163,12 +172,12 @@ void runQueueItem(pid_t* pid) {
 		perror("Attachment."); 
 		exit(2);
 	}
-    semProc2++;
+    semProc2+=2;
+    int* bytes = (int*)semProc2;
+    semProc2--;
 
-    char buffer[100];
-    char* args[100];
-    memset(args,0,100);
-    memset(buffer,0,100);
+    char *buffer = malloc(*bytes);
+    char** args;
     int fd = open(execFifo,O_RDONLY);
     if(fd == -1) {
         printf("open error\n");
@@ -176,17 +185,27 @@ void runQueueItem(pid_t* pid) {
     }
     sem_wait(semProc2);
     read(fd,buffer,100);
+    char* toTok = strdup(buffer);
     close(fd);
-    printf("TO RUN: %s\n",buffer);
+    int argCount =0;
+    char* tok = strtok(toTok," ");
+    while(tok) {
+        argCount++;
+        tok = strtok(NULL," ");
+    }
+    args = malloc((argCount + 1) * sizeof(char*));
 
-    char* tok = strtok(buffer," ");
+
+    tok = strtok(buffer," ");
     int i = 0;
     while(tok) {
-        args[i++] = tok;
+        args[i] = strdup(tok);
+        i++;
         tok = strtok(NULL," ");
-
     }
     args[i] = NULL;
+
+    printf("TO RUN: %s, %s\n",args[0],args[1]);
     execvp(args[0],args);
 
     perror("execvp");
@@ -241,7 +260,7 @@ int main(int argc, char** argv) {
     pQueue runningProcs;
     int shmidA;
     sem_t *semProc1;
-    if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t)*2, (S_IRUSR|S_IWUSR))) == -1) { //desmevw 50 theseis se afti ti periptwsi char gia testing
+    if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t)*2+4, (S_IRUSR|S_IWUSR))) == -1) { //desmevw 50 theseis se afti ti periptwsi char gia testing
         perror("Failed to create shared memory segment");
         return 1;
     } else {
@@ -257,6 +276,10 @@ int main(int argc, char** argv) {
     } else {
         printf("Created semProc1\n");
     }
+    semProc1 +=2;
+    int* bytes = (int*)semProc1;
+    semProc1 -=2;
+
     semProc1++;
     semProc2 = semProc1;
     if (sem_init(semProc2, 1, 1) == -1) {
@@ -271,12 +294,13 @@ int main(int argc, char** argv) {
     execfd = open(execFifo,O_RDWR | O_NONBLOCK);
     queuedProcs = qInit();
     runningProcs = qInit();
-    char buf[100]; //will change later
+    char *buf; //will change later
     fd = open(namedFifo,O_RDONLY);
     while(1) { 
         if(sem_trywait(semProc1) == 0) {
-            memset(buf,0,100);
-            read(fd,buf,100);
+            buf = malloc(sizeof(*bytes));
+            memset(buf,0,*bytes);
+            read(fd,buf,*bytes);
             char* tok = strtok(buf,"\0");
             while(tok) {
                 // printf("TOKEN %s\n",tok);
@@ -296,8 +320,8 @@ int main(int argc, char** argv) {
                         executionCheck(queuedProcs,runningProcs);
                     }
                 } else if(strncmp(buf,"stop",4) == 0) {
-                    jobStop(buf+4);            
-                    executionCheck(queuedProcs,runningProcs);
+                    // jobStop(buf+4);            
+                    // executionCheck(queuedProcs,runningProcs);
                 } else if(strncmp(buf,"poll",4) == 0) { 
                     if(strncmp(buf+5,"running",7) == 0) {
                         pqPrint(runningProcs,0);
@@ -313,6 +337,7 @@ int main(int argc, char** argv) {
             running--;
             printf("PROCESS HAS FINISHED\n");
             executionCheck(queuedProcs,runningProcs);
+            pqRemove(pqFindProc(test,runningProcs),runningProcs);
         }
     }
     close(fd);

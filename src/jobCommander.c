@@ -69,7 +69,9 @@ int main(int argc, char** argv) {
 		perror("Attachment."); 
 		exit(2);
 	}
-
+    semProc1+=2;
+    int* bytes = (int*)semProc1;
+    semProc1-=2;
     //Initialize Semaphores
     mkfifo(namedFifo,0666);
     int fd;
@@ -93,11 +95,14 @@ int main(int argc, char** argv) {
         }
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
+        *bytes = strlen(concatenated);
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
         
+        *bytes = strlen(concatenated);
     } else if(strncmp(argv[1],"stop",4) == 0) {
         write(fd,concatenated,strlen(concatenated));
+        *bytes = strlen(concatenated);
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){
         if(argc < 3) {
             printf("Usage: jobCommander setConcurrency <number>\n");

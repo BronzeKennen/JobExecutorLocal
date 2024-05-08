@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include "../headers/pq.h"
 pQueue qInit() {
     pQueue q = malloc(sizeof(*q));
@@ -28,7 +29,10 @@ void pqPopFirst(pQueue q) {
 
 void pqRemove(pqNode node, pQueue q) {
     pqNode f = q->first;
-    if(node == f) pqPopFirst(q);
+    if(node == f) {
+       pqPopFirst(q); 
+       return;
+    } 
     pqNode s = q->first->next;
     for(int i = 0; i < q->size-1; i++) {
         if(s == node) {
