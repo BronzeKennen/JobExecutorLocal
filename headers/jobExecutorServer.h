@@ -16,4 +16,4 @@ int serverClose();
 
 void issueJob(char*, pQueue);
 void setConcurrency(int);
-void jobStop(char*);
+void jobStop(char*,pQueue);

@@ -42,6 +42,7 @@ int isUp(int mode) {
 }
 
 char* namedFifo = "/tmp/comfifo";
+char* serverFifo = "/tmp/servfifo";
 
 int main(int argc, char** argv) {
 
@@ -74,8 +75,9 @@ int main(int argc, char** argv) {
     semProc1-=2;
     //Initialize Semaphores
     mkfifo(namedFifo,0666);
-    int fd;
-    fd = open(namedFifo,O_WRONLY);
+    
+    int fd = open(namedFifo,O_WRONLY);
+    int sd = open(serverFifo,O_RDONLY | O_NONBLOCK);
     size_t total_length = 0;
     for (int i = 1; i < argc; i++) {
         total_length += strlen(argv[i]);
@@ -122,7 +124,8 @@ int main(int argc, char** argv) {
         printf("Invalid argument.\n");
         exit(1);
     }
-    sem_post(semProc1);
+    if(*(int*)semProc1 != 1) sem_post(semProc1);
     close(fd);
+    close(sd);
     return 0;
 }

@@ -7,7 +7,7 @@ jobexec: jobexecserver.o  pq.o
 jobexecserver.o: pq.o
 	gcc -c src/jobExecutorServer.c
 
-pq.o:
+pq.o: src/pq.c
 	gcc -c src/pq.c
 
 run: jobexec

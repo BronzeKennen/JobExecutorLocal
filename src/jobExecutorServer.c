@@ -19,12 +19,12 @@ int queue = 0;
 int running = 0;
 int jobId = 1;
 
+char* serverFifo = "/tmp/servfifo";
 char* namedFifo = "/tmp/comfifo";
 char* execFifo = "/tmp/execfifo";
 const char* filename = "jobExecutorServer.txt";
 
-int execfd;
-int fd;
+int execfd,sd,fd;
 
 // Table with all processes (RUNNING/QUEUED)
 // Stack with queued processes only (POP ONLY FIRST)
@@ -32,22 +32,39 @@ int fd;
 sem_t *semProc2;
 pqNode pqFindJob(char* jobId, pQueue q) {
     pqNode node = q->first;
+    if(!node) {
+        printf("error:\n");
+        return NULL;
+    }
     jProperties* data = (jProperties*)node->data;
     char* tok = strtok(jobId+1," ");
     for(int i = 0; i < q->size; i++) {
         if(strncmp(jobId+1,data->jobId,strlen(jobId)) == 0) return node;
         node = node->next;
-
+        data = (jProperties*)node->data;
+    }
+    if(!node) {
+        printf("error:\n");
+        return NULL;
     }
 }
 
 pqNode pqFindProc(int pid, pQueue q) {
     pqNode node = q->first;
+    if(!node) {
+        printf("error:\n");
+        return NULL;
+    }
     runningJobs* data = (runningJobs*)node->data;
     for(int i = 0; i < q->size; i++) {
         if(pid == data->pid) return node;
         node = node->next;
+        data = (runningJobs*)node->data;
 
+    }
+    if(!node) {
+        printf("error:\n");
+        return NULL;
     }
 }
 pQueue runningProcs;
@@ -86,35 +103,32 @@ void pqPrint(pQueue q,int mode) {
     if(!mode) {
         printf("PRINTING RUNNING JOBS\n");
         pqNode s = q->first;
+        if(!s) return;
         runningJobs* data = (runningJobs*)s->data;
         printf("0: %s,%d\n",data->jobId,data->pid);
-        if(s) {
-            for(int i = 1; i < queue; i++) {
-                s = s->next;
-                if(!s) break;
-                data = (runningJobs*)s->data;
-                printf("%d: %s,%d\n",i,data->jobId,data->pid);
-            }
+        for(int i = 1; i < queue; i++) {
+            s = s->next;
+            if(!s) break;
+            data = (runningJobs*)s->data;
+            printf("%d: %s,%d\n",i,data->jobId,data->pid);
         }
     } else{
         printf("PRINTING QUEUED JOBS\n");
         pqNode s = q->first;
+        if(!s) return;
         jProperties* data = (jProperties*)s->data;
         printf("0, %s,%s,%d\n",data->job,data->jobId,data->qPos);
-        if(s) {
-            for(int i = 1; i < queue; i++) {
-                s = s->next;
-                if(!s) break;
-                data = (jProperties*)s->data;
-                printf("%d: %s,%s,%d\n",i,data->job,data->jobId,data->qPos);
-            }
+        for(int i = 1; i < queue; i++) {
+            s = s->next;
+            if(!s) break;
+            data = (jProperties*)s->data;
+            printf("%d: %s,%s,%d\n",i,data->job,data->jobId,data->qPos);
         }
     }
 }
 
 void insert(void* new, pQueue q) {
 
-    printf("inserting\n");
     if(q->first == NULL) {
         q->first = malloc(sizeof(*q->first));
         q->first->data = malloc(sizeof(void*));
@@ -205,7 +219,7 @@ void runQueueItem(pid_t* pid) {
     }
     args[i] = NULL;
 
-    printf("TO RUN: %s, %s\n",args[0],args[1]);
+    // printf("TO RUN: %s, %s\n",args[0],args[1]);
     execvp(args[0],args);
 
     perror("execvp");
@@ -238,14 +252,18 @@ void executionCheck(pQueue q, pQueue curRunning) {
 }
 
 
-void jobStop(char* jobId) {
-    // printf("CALLED JOB STOP!\n");
-    // pqNode toFind = pqFindJob(jobId);
+void jobStop(char* jobId, pQueue q) {
+    pqNode toFind = pqFindJob(jobId,q);
+    if(!toFind) {
+        printf("O_O\n");
+        return;
+    }
+    jProperties *data = (jProperties*)toFind->data;
     // if(toFind) {
-        // printf("%s,%s,%d JOB STOP FINDINGS\n",toFind->data->job,toFind->data->jobId,toFind->data->qPos);
+        // printf("%s,%s,%d JOB STOP FINDINGS\n",data->job,data->jobId,data->qPos);
     // }
     // 
-    // pqRemove(toFind);
+    pqRemove(toFind,q);
 
 }
 
@@ -263,9 +281,7 @@ int main(int argc, char** argv) {
     if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t)*2+4, (S_IRUSR|S_IWUSR))) == -1) { //desmevw 50 theseis se afti ti periptwsi char gia testing
         perror("Failed to create shared memory segment");
         return 1;
-    } else {
-        printf("shmidA: %d\n",shmidA);
-    }
+    } 
     serverInit(shmidA);
     if ((semProc1 = shmat(shmidA, NULL, 0)) == (void *)-1) {
         perror("Failed to attach memory segment");
@@ -273,9 +289,7 @@ int main(int argc, char** argv) {
     }
     if (sem_init(semProc1, 1, 0) == -1) {
         perror("Failed to initialize semaphore");
-    } else {
-        printf("Created semProc1\n");
-    }
+    } 
     semProc1 +=2;
     int* bytes = (int*)semProc1;
     semProc1 -=2;
@@ -284,13 +298,12 @@ int main(int argc, char** argv) {
     semProc2 = semProc1;
     if (sem_init(semProc2, 1, 1) == -1) {
         perror("Failed to initialize semaphore");
-    } else {
-        printf("Created semProc2\n");
     }
     semProc1--;
     int status;
 
     mkfifo(execFifo,0666);
+    mkfifo(serverFifo,0666);
     execfd = open(execFifo,O_RDWR | O_NONBLOCK);
     queuedProcs = qInit();
     runningProcs = qInit();
@@ -298,12 +311,12 @@ int main(int argc, char** argv) {
     fd = open(namedFifo,O_RDONLY);
     while(1) { 
         if(sem_trywait(semProc1) == 0) {
+            sd = open(serverFifo,O_WRONLY);
             buf = malloc(sizeof(*bytes));
             memset(buf,0,*bytes);
             read(fd,buf,*bytes);
             char* tok = strtok(buf,"\0");
             while(tok) {
-                // printf("TOKEN %s\n",tok);
                 if(strncmp(buf,"1",1) == 0) {
                     printf("Server is shutting down...\n");
                     serverClose();
@@ -320,8 +333,7 @@ int main(int argc, char** argv) {
                         executionCheck(queuedProcs,runningProcs);
                     }
                 } else if(strncmp(buf,"stop",4) == 0) {
-                    // jobStop(buf+4);            
-                    // executionCheck(queuedProcs,runningProcs);
+                    jobStop(buf+4,queuedProcs);            
                 } else if(strncmp(buf,"poll",4) == 0) { 
                     if(strncmp(buf+5,"running",7) == 0) {
                         pqPrint(runningProcs,0);
@@ -331,13 +343,16 @@ int main(int argc, char** argv) {
                 }
                 tok = strtok(NULL,"\0");
             }
+            close(sd);
         }
         pid_t test = waitpid(0,&status,WNOHANG);
         if(test && test != -1) {
             running--;
             printf("PROCESS HAS FINISHED\n");
-            executionCheck(queuedProcs,runningProcs);
             pqRemove(pqFindProc(test,runningProcs),runningProcs);
+            pqPrint(runningProcs,0);
+            pqPrint(queuedProcs,1);
+            executionCheck(queuedProcs,runningProcs);
         }
     }
     close(fd);
