@@ -138,6 +138,7 @@ int main(int argc, char** argv) {
         printf("Invalid argument.\n");
         exit(1);
     }
+        // printf("====> %s\n",argv[2]);
     close(fd);
     return 0;
 }

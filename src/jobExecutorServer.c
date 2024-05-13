@@ -15,7 +15,7 @@
 #include <signal.h>
 
 int concurrency = 1;
-int queue = 0;
+int queue = 1;
 int running = 0;
 int jobId = 1;
 
@@ -109,24 +109,24 @@ void pqPrint(pQueue q,int mode) {
         pqNode s = q->first;
         if(!s) return;
         runningJobs* data = (runningJobs*)s->data;
-        printf("0: %s,%d\n",data->jobId,data->pid);
-        for(int i = 1; i < queue; i++) {
+        printf("==> %s,%d\n",data->jobId,data->pid);
+        for(int i = 1; i <= queue; i++) {
             s = s->next;
             if(!s) break;
             data = (runningJobs*)s->data;
-            printf("%d: %s,%d\n",i,data->jobId,data->pid);
+            printf("%s,%d\n",data->jobId,data->pid);
         }
     } else{
         printf("PRINTING QUEUED JOBS\n");
         pqNode s = q->first;
         if(!s) return;
         jProperties* data = (jProperties*)s->data;
-        printf("0, %s,%s,%d\n",data->job,data->jobId,data->qPos);
-        for(int i = 1; i < queue; i++) {
+        printf("1, %s,%s\n",data->job,data->jobId);
+        for(int i = 1; i <= queue; i++) {
             s = s->next;
             if(!s) break;
             data = (jProperties*)s->data;
-            printf("%d: %s,%s,%d\n",i,data->job,data->jobId,data->qPos);
+            printf("%d: %s,%s\n",i+1,data->job,data->jobId);
         }
     }
 }
@@ -134,7 +134,6 @@ void pqPrint(pQueue q,int mode) {
 
 void issueJob(char* job,pQueue q) {
 
-    queue++;
     jProperties *new = malloc(sizeof(jProperties));
 
     char jobString[7];
@@ -142,7 +141,7 @@ void issueJob(char* job,pQueue q) {
     new->jobId = malloc(strlen(jobString));
 
     strncpy(new->jobId,jobString,strlen(jobString));
-    new->qPos = jobId;
+    new->qPos = queue++;
     jobId++;
 
     new->job = malloc(strlen(job));
@@ -205,10 +204,10 @@ void executionCheck(pQueue q, pQueue curRunning) {
         strncpy(p->jobId,data->jobId,strlen(data->jobId));
         pqPopFirst(q);
         insert(p,curRunning);
+        queue--;
         running++;
         runQueueItem(&pid,data->job);
         p->pid = pid;
-        queue--;
     } 
 }
 
@@ -219,7 +218,8 @@ void jobStop(char* jobId, pQueue q) {
         printf("O_O\n");
         return;
     }
-    jProperties *data = (jProperties*)toFind->data;
+    jProperties* data = (jProperties*)toFind->data;
+    printf("<%s,%s,%d>\n",data->job,data->jobId,data->qPos);
     pqRemove(toFind,q);
 
 }
@@ -271,7 +271,11 @@ int main(int argc, char** argv) {
         if(sem_trywait(semProc1) == 0) {
             buf = malloc(*bytes);
             memset(buf,0,*bytes);
-            read(fd,buf,*bytes);
+            if(read(fd,buf,*bytes) == -1) {
+                printf("error reading bytes\n");
+                continue;
+            }
+            printf("Server %s\n",buf);
 
             char* tok = strtok(buf,"\0");
             

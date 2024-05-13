@@ -10,5 +10,8 @@ killall progDelay
 ./jobCommander poll queued
 ./jobCommander stop job_4
 ./jobCommander stop job_5
-./jobCommander poll running
-./jobCommander poll queued
+# ./jobCommander poll running
+# ./jobCommander poll queued
+# ./jobCommander issueJob ps
+# ./jobCommander issueJob ls
+# ./jobCommander issueJob echo megatron on the table
