@@ -28,6 +28,10 @@ int execfd,sd,fd;
 
 // Table with all processes (RUNNING/QUEUED)
 // Stack with queued processes only (POP ONLY FIRST)
+void updateQueue(pQueue q) {
+    pqNode node = q->first;
+
+}
 
 sem_t *semProc2;
 pqNode pqFindJob(char* jobId, pQueue q) {
@@ -145,7 +149,9 @@ void issueJob(char* job,pQueue q) {
     strncpy(new->job,job,strlen(job));
 
     insert(new,q);
-    printf("Job %s has been issued on queue with id: %s\n",new->job,new->jobId);
+    char toWrite[strlen(job)+strlen(new->jobId)+5];
+    sprintf(toWrite,"%s,%s,%d",new->job,new->jobId,new->qPos);
+    write(sd,toWrite,sizeof(toWrite));
 }
 
 void runQueueItem(pid_t* pid,char* job) {
@@ -200,9 +206,7 @@ void executionCheck(pQueue q, pQueue curRunning) {
         pqPopFirst(q);
         insert(p,curRunning);
         running++;
-        write(execfd,data->job+1,strlen(data->job+1));
         runQueueItem(&pid,data->job);
-        // printf("huh\n");
         p->pid = pid;
         queue--;
     } 
@@ -265,8 +269,7 @@ int main(int argc, char** argv) {
     fd = open(namedFifo,O_RDONLY);
     while(1) { 
         if(sem_trywait(semProc1) == 0) {
-            // sd = open(serverFifo,O_WRONLY);
-            buf = malloc(sizeof(*bytes));
+            buf = malloc(*bytes);
             memset(buf,0,*bytes);
             read(fd,buf,*bytes);
 
@@ -280,7 +283,9 @@ int main(int argc, char** argv) {
                 
                 } else if(strncmp(buf,"issueJob",8) == 0) {
                     
+                    sd = open(serverFifo,O_WRONLY);
                     issueJob(buf+8,queuedProcs);
+                    close(sd);
                     executionCheck(queuedProcs,runningProcs);
 
                 } else if(strncmp(buf,"setConcurrency",14) == 0) {
@@ -293,9 +298,12 @@ int main(int argc, char** argv) {
                 
                     while(concurrency > running) 
                         executionCheck(queuedProcs,runningProcs);
+                    
+                    write(sd,"ack",3);
                 } else if(strncmp(buf,"stop",4) == 0) {
                     
                     jobStop(buf+4,queuedProcs);            
+                    write(sd,"stop",4);
                 
                 } else if(strncmp(buf,"poll",4) == 0) { 
                 
@@ -305,7 +313,6 @@ int main(int argc, char** argv) {
                 }
                 tok = strtok(NULL,"\0");
             }
-            // close(sd);
         }
         pid_t test = waitpid(0,&status,WNOHANG);
         if(test && test != -1) {

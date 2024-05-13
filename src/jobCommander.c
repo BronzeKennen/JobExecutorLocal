@@ -81,7 +81,6 @@ int main(int argc, char** argv) {
     
     mkfifo(namedFifo,0666);
     int fd = open(namedFifo,O_WRONLY);
-    int sd = open(serverFifo,O_RDONLY | O_NONBLOCK);
     size_t total_length = 0;
     for (int i = 1; i < argc; i++) {
         total_length += strlen(argv[i]);
@@ -101,14 +100,23 @@ int main(int argc, char** argv) {
         }
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
+        if(*(int*)semProc1 != 1) sem_post(semProc1);
         *bytes = strlen(concatenated);
+        int sd = open(serverFifo,O_RDONLY );
+        char buff[*bytes+5];
+        memset(buff,0,*bytes+5);
+        read(sd,buff,*bytes+5);
+        printf("Server responded with <%s>\n",buff);
+        close(sd);
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
         
         *bytes = strlen(concatenated);
+        if(*(int*)semProc1 != 1) sem_post(semProc1);
     } else if(strncmp(argv[1],"stop",4) == 0) {
         write(fd,concatenated,strlen(concatenated));
         *bytes = strlen(concatenated);
+        if(*(int*)semProc1 != 1) sem_post(semProc1);
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){
         if(argc < 3) {
             printf("Usage: jobCommander setConcurrency <number>\n");
@@ -122,14 +130,14 @@ int main(int argc, char** argv) {
             return 1;
         }
         write(fd,concatenated,strlen(concatenated));
+        if(*(int*)semProc1 != 1) sem_post(semProc1);
     } else if(strncmp(argv[1],"poll",4) == 0) {
         write(fd,concatenated,strlen(concatenated));  
+        if(*(int*)semProc1 != 1) sem_post(semProc1);
     } else {
         printf("Invalid argument.\n");
         exit(1);
     }
-    if(*(int*)semProc1 != 1) sem_post(semProc1);
     close(fd);
-    close(sd);
     return 0;
 }
