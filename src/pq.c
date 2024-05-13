@@ -45,3 +45,26 @@ void pqRemove(pqNode node, pQueue q) {
     }
     q->size--;
 }
+void insert(void* new, pQueue q) {
+
+    if(q->first == NULL) {
+        q->first = malloc(sizeof(*q->first));
+        q->first->data = malloc(sizeof(void*));
+        q->first->data = new;
+        q->last = malloc(sizeof(*q->last));
+        q->last->data = malloc(sizeof(void*));
+        q->last->data = new;
+        //Initialize first and last nodes
+    } else if(q->size == 1) {
+        q->last->data = new;
+        q->first->next = malloc(sizeof(*q->first->next));
+        q->first->next = q->last;
+        //second element is last on list, and next one after first
+    } else  {    
+        q->last->next = malloc(sizeof(*q->last->next));
+        q->last->next->data = new;
+        q->last = q->last->next;
+        //whichever element enters is now last, therefore next of the previous last
+    }
+    q->size++;
+}

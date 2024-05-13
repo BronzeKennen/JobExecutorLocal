@@ -14,3 +14,4 @@ pqNode pqGetFirst(pQueue);
 pQueue qInit();
 void pqPopFirst(pQueue);
 void pqRemove(pqNode, pQueue);
+void insert(void*,pQueue);

@@ -127,45 +127,28 @@ void pqPrint(pQueue q,int mode) {
     }
 }
 
-void insert(void* new, pQueue q) {
-
-    if(q->first == NULL) {
-        q->first = malloc(sizeof(*q->first));
-        q->first->data = malloc(sizeof(void*));
-        q->first->data = new;
-        q->last = malloc(sizeof(*q->last));
-        q->last->data = malloc(sizeof(void*));
-        q->last->data = new;
-        //Initialize first and last nodes
-    } else if(q->size == 1) {
-        q->last->data = new;
-        q->first->next = malloc(sizeof(*q->first->next));
-        q->first->next = q->last;
-        //second element is last on list, and next one after first
-    } else  {    
-        q->last->next = malloc(sizeof(*q->last->next));
-        q->last->next->data = new;
-        q->last = q->last->next;
-        //whichever element enters is now last, therefore next of the previous last
-    }
-    q->size++;
-}
 
 void issueJob(char* job,pQueue q) {
+
     queue++;
     jProperties *new = malloc(sizeof(jProperties));
+
     char jobString[7];
     sprintf(jobString,"job_%d",jobId);
     new->jobId = malloc(strlen(jobString));
+
     strncpy(new->jobId,jobString,strlen(jobString));
     new->qPos = jobId;
     jobId++;
+
     new->job = malloc(strlen(job));
     strncpy(new->job,job,strlen(job));
+
     insert(new,q);
     printf("Job %s has been issued on queue with id: %s\n",new->job,new->jobId);
 }
-void runQueueItem(pid_t* pid) {
+
+void runQueueItem(pid_t* pid,char* job) {
     int shmid;
     *pid = fork();
     if(*pid == -1) {
@@ -173,33 +156,8 @@ void runQueueItem(pid_t* pid) {
         exit(EXIT_FAILURE);
     }
     if(*pid != 0) return;
-    if(access(filename,F_OK) != -1) {
-        int fd = open(filename,O_RDONLY);
-        char lmao[20];
-        read(fd,lmao,20);
-        char* token = strtok(lmao,"\n");
-        token = strtok(NULL,"\n");
-        shmid = atoi(token);
-    }
-    semProc2 = shmat(shmid,NULL,0);
-    if (semProc2 == (void *) -1) {
-		perror("Attachment."); 
-		exit(2);
-	}
-    semProc2+=2;
-    int* bytes = (int*)semProc2;
-    semProc2--;
 
-    char *buffer = malloc(*bytes);
-    char** args;
-    int fd = open(execFifo,O_RDONLY);
-    if(fd == -1) {
-        printf("open error\n");
-        exit(EXIT_FAILURE); 
-    }
-    sem_wait(semProc2);
-    read(fd,buffer,100);
-    char* toTok = strdup(buffer);
+    char* toTok = strdup(job);
     close(fd);
     int argCount =0;
     char* tok = strtok(toTok," ");
@@ -207,10 +165,10 @@ void runQueueItem(pid_t* pid) {
         argCount++;
         tok = strtok(NULL," ");
     }
-    args = malloc((argCount + 1) * sizeof(char*));
+    char** args =malloc((argCount + 1) * sizeof(char*));
 
 
-    tok = strtok(buffer," ");
+    tok = strtok(job," ");
     int i = 0;
     while(tok) {
         args[i] = strdup(tok);
@@ -219,7 +177,6 @@ void runQueueItem(pid_t* pid) {
     }
     args[i] = NULL;
 
-    // printf("TO RUN: %s, %s\n",args[0],args[1]);
     execvp(args[0],args);
 
     perror("execvp");
@@ -244,8 +201,8 @@ void executionCheck(pQueue q, pQueue curRunning) {
         insert(p,curRunning);
         running++;
         write(execfd,data->job+1,strlen(data->job+1));
-        sem_post(semProc2);
-        runQueueItem(&pid);
+        runQueueItem(&pid,data->job);
+        // printf("huh\n");
         p->pid = pid;
         queue--;
     } 
@@ -259,10 +216,6 @@ void jobStop(char* jobId, pQueue q) {
         return;
     }
     jProperties *data = (jProperties*)toFind->data;
-    // if(toFind) {
-        // printf("%s,%s,%d JOB STOP FINDINGS\n",data->job,data->jobId,data->qPos);
-    // }
-    // 
     pqRemove(toFind,q);
 
 }
@@ -276,9 +229,10 @@ int serverClose() {
 int main(int argc, char** argv) {
     pQueue queuedProcs;
     pQueue runningProcs;
-    int shmidA;
+    int shmidA; //Shared memory id
     sem_t *semProc1;
-    if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t)*2+4, (S_IRUSR|S_IWUSR))) == -1) { //desmevw 50 theseis se afti ti periptwsi char gia testing
+    if ((shmidA = shmget(IPC_PRIVATE, sizeof(sem_t)*2+4, (S_IRUSR|S_IWUSR))) == -1) {
+        //shared memory
         perror("Failed to create shared memory segment");
         return 1;
     } 
@@ -287,6 +241,7 @@ int main(int argc, char** argv) {
         perror("Failed to attach memory segment");
         return 1;
     }
+    //Initialize 2 semaphores
     if (sem_init(semProc1, 1, 0) == -1) {
         perror("Failed to initialize semaphore");
     } 
@@ -301,57 +256,61 @@ int main(int argc, char** argv) {
     }
     semProc1--;
     int status;
-
-    mkfifo(execFifo,0666);
     mkfifo(serverFifo,0666);
-    execfd = open(execFifo,O_RDWR | O_NONBLOCK);
+
+    //Initialize queues for running/queued jobs
     queuedProcs = qInit();
     runningProcs = qInit();
-    char *buf; //will change later
+    char *buf; 
     fd = open(namedFifo,O_RDONLY);
     while(1) { 
         if(sem_trywait(semProc1) == 0) {
-            sd = open(serverFifo,O_WRONLY);
+            // sd = open(serverFifo,O_WRONLY);
             buf = malloc(sizeof(*bytes));
             memset(buf,0,*bytes);
             read(fd,buf,*bytes);
+
             char* tok = strtok(buf,"\0");
+            
             while(tok) {
                 if(strncmp(buf,"1",1) == 0) {
+                    
                     printf("Server is shutting down...\n");
                     serverClose();
+                
                 } else if(strncmp(buf,"issueJob",8) == 0) {
+                    
                     issueJob(buf+8,queuedProcs);
                     executionCheck(queuedProcs,runningProcs);
+
                 } else if(strncmp(buf,"setConcurrency",14) == 0) {
                     int con = atoi(buf+14); 
-                    if(!con) {
+                
+                    if(!con)
                         printf("Error reading argument.\n");
-                    }
+                
                     setConcurrency(con);
-                    while(concurrency > running) {
+                
+                    while(concurrency > running) 
                         executionCheck(queuedProcs,runningProcs);
-                    }
                 } else if(strncmp(buf,"stop",4) == 0) {
+                    
                     jobStop(buf+4,queuedProcs);            
+                
                 } else if(strncmp(buf,"poll",4) == 0) { 
-                    if(strncmp(buf+5,"running",7) == 0) {
-                        pqPrint(runningProcs,0);
-                    } else if(strncmp(buf+5,"queued",6) == 0) {
-                        pqPrint(queuedProcs,1);
-                    }
+                
+                    if(strncmp(buf+5,"running",7) == 0) pqPrint(runningProcs,0);
+                    else if(strncmp(buf+5,"queued",6) == 0) pqPrint(queuedProcs,1);
+                
                 }
                 tok = strtok(NULL,"\0");
             }
-            close(sd);
+            // close(sd);
         }
         pid_t test = waitpid(0,&status,WNOHANG);
         if(test && test != -1) {
             running--;
-            printf("PROCESS HAS FINISHED\n");
             pqRemove(pqFindProc(test,runningProcs),runningProcs);
-            pqPrint(runningProcs,0);
-            pqPrint(queuedProcs,1);
             executionCheck(queuedProcs,runningProcs);
         }
     }

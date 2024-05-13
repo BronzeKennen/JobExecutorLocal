@@ -73,9 +73,13 @@ int main(int argc, char** argv) {
     semProc1+=2;
     int* bytes = (int*)semProc1;
     semProc1-=2;
+    semProc1++;
+    sem_t * semProc2 = semProc1;
+    semProc1--;
+    while(*(int*)semProc2 == 0);
     //Initialize Semaphores
-    mkfifo(namedFifo,0666);
     
+    mkfifo(namedFifo,0666);
     int fd = open(namedFifo,O_WRONLY);
     int sd = open(serverFifo,O_RDONLY | O_NONBLOCK);
     size_t total_length = 0;
