@@ -1,6 +1,7 @@
 #include "../headers/jobExecutorServer.h"
 #include "../headers/pq.h"
 #include <stdlib.h>
+#include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -28,27 +29,22 @@ int execfd,sd,fd;
 
 // Table with all processes (RUNNING/QUEUED)
 // Stack with queued processes only (POP ONLY FIRST)
-void updateQueue(pQueue q) {
-    pqNode node = q->first;
-
-}
 
 sem_t *semProc2;
+//Horrible design but no time
 pqNode pqFindJob(char* jobId, pQueue q) {
     pqNode node = q->first;
     if(!node) {
-        printf("error:\n");
         return NULL;
     }
-    jProperties* data = (jProperties*)node->data;
-    char* tok = strtok(jobId+1," ");
-    for(int i = 0; i < q->size; i++) {
-        if(strncmp(jobId+1,data->jobId,strlen(jobId)) == 0) return node;
-        node = node->next;
+    jProperties* data;
+    char* toCmp = strtok(jobId," ");
+    while(node) {
         data = (jProperties*)node->data;
+        if(strcmp(toCmp,data->jobId) == 0) return node;
+        node = node->next;
     }
     if(!node) {
-        printf("error:\n");
         return NULL;
     }
 }
@@ -56,22 +52,38 @@ pqNode pqFindJob(char* jobId, pQueue q) {
 pqNode pqFindProc(int pid, pQueue q) {
     pqNode node = q->first;
     if(!node) {
-        printf("error:\n");
         return NULL;
     }
-    runningJobs* data = (runningJobs*)node->data;
-    for(int i = 0; i < q->size; i++) {
+
+    runningJobs* data;
+
+    while(node) {
+        data = (runningJobs*)node->data;
         if(pid == data->pid) return node;
         node = node->next;
-        data = (runningJobs*)node->data;
-
     }
     if(!node) {
-        printf("error:\n");
         return NULL;
     }
 }
-pQueue runningProcs;
+pqNode pqFindProc2(char* jobId,pQueue q) { 
+    pqNode node = q->first;
+    if(!node) {
+        return NULL;
+    }
+
+    runningJobs* data;
+
+    char* toCmp = strtok(jobId," ");
+    while(node) {
+        data = (runningJobs*)node->data;
+        if(strcmp(toCmp,data->jobId) == 0) return node;
+        node = node->next;
+    }
+    if(!node) {
+        return NULL;
+    }
+}
 int serverInit(int shmid) {
     int pid = getpid(); 
 
@@ -114,7 +126,7 @@ void pqPrint(pQueue q,int mode) {
             s = s->next;
             if(!s) break;
             data = (runningJobs*)s->data;
-            printf("%s,%d\n",data->jobId,data->pid);
+            printf("==> %s,%d\n",data->jobId,data->pid);
         }
     } else{
         printf("PRINTING QUEUED JOBS\n");
@@ -212,14 +224,13 @@ void executionCheck(pQueue q, pQueue curRunning) {
 }
 
 
-void jobStop(char* jobId, pQueue q) {
-    pqNode toFind = pqFindJob(jobId,q);
+int jobStop(char* jobId, pQueue q,int m) {
+    pqNode toFind;
+    if(m) toFind = pqFindJob(jobId,q);
+    else toFind = pqFindProc2(jobId,q);
     if(!toFind) {
-        printf("O_O\n");
-        return;
+        return -1;
     }
-    jProperties* data = (jProperties*)toFind->data;
-    printf("<%s,%s,%d>\n",data->job,data->jobId,data->qPos);
     pqRemove(toFind,q);
 
 }
@@ -250,7 +261,7 @@ int main(int argc, char** argv) {
         perror("Failed to initialize semaphore");
     } 
     semProc1 +=2;
-    int* bytes = (int*)semProc1;
+    int* bytes = (int*)semProc1; //Commander tells server how many bytes to read
     semProc1 -=2;
 
     semProc1++;
@@ -260,35 +271,39 @@ int main(int argc, char** argv) {
     }
     semProc1--;
     int status;
-    mkfifo(serverFifo,0666);
+    if(mkfifo(serverFifo,0666) == -1) {
+        if(errno != EEXIST) {
+            printf("Error creating pipe.\n");
+            exit(1);
+        }
+    }
 
     //Initialize queues for running/queued jobs
     queuedProcs = qInit();
     runningProcs = qInit();
     char *buf; 
     fd = open(namedFifo,O_RDONLY);
-    while(1) { 
-        if(sem_trywait(semProc1) == 0) {
+    while(1) { //trywait to still be able to check if a process has finished
+        if(sem_trywait(semProc1) == 0) { 
             buf = malloc(*bytes);
             memset(buf,0,*bytes);
             if(read(fd,buf,*bytes) == -1) {
                 printf("error reading bytes\n");
                 continue;
             }
-            printf("Server %s\n",buf);
 
             char* tok = strtok(buf,"\0");
             
             while(tok) {
-                if(strncmp(buf,"1",1) == 0) {
+                if(strncmp(buf,"1",1) == 0) { //exit
                     
                     printf("Server is shutting down...\n");
                     serverClose();
                 
                 } else if(strncmp(buf,"issueJob",8) == 0) {
                     
-                    sd = open(serverFifo,O_WRONLY);
-                    issueJob(buf+8,queuedProcs);
+                    sd = open(serverFifo,O_WRONLY); //send back to commander the struct
+                    issueJob(buf+8,queuedProcs); //add to queued jobs
                     close(sd);
                     executionCheck(queuedProcs,runningProcs);
 
@@ -299,30 +314,39 @@ int main(int argc, char** argv) {
                         printf("Error reading argument.\n");
                 
                     setConcurrency(con);
-                
+                    //check if there is a process to run enough to fill max amount of 
+                    //concurrent processes running.
                     while(concurrency > running) 
                         executionCheck(queuedProcs,runningProcs);
                     
-                    write(sd,"ack",3);
                 } else if(strncmp(buf,"stop",4) == 0) {
                     
-                    jobStop(buf+4,queuedProcs);            
-                    write(sd,"stop",4);
+                    if(pqFindJob(buf+5,queuedProcs) == NULL) {
+                        if(pqFindProc2(buf+5,runningProcs) == NULL) {
+                            printf("Job id not found.\n");
+                        } else {
+                            jobStop(buf+5,runningProcs,0);
+                        }
+                    } else {
+                        jobStop(buf+5,queuedProcs,1);
+                    }
                 
                 } else if(strncmp(buf,"poll",4) == 0) { 
                 
                     if(strncmp(buf+5,"running",7) == 0) pqPrint(runningProcs,0);
                     else if(strncmp(buf+5,"queued",6) == 0) pqPrint(queuedProcs,1);
                 
+                } else {
+                    printf("An error occured\n");
                 }
                 tok = strtok(NULL,"\0");
             }
         }
-        pid_t test = waitpid(0,&status,WNOHANG);
-        if(test && test != -1) {
-            running--;
-            pqRemove(pqFindProc(test,runningProcs),runningProcs);
-            executionCheck(queuedProcs,runningProcs);
+        pid_t test = waitpid(0,&status,WNOHANG); //check if a process has finished
+        if(test && test != -1) { 
+            running--; //make space for another process to run
+            pqRemove(pqFindProc(test,runningProcs),runningProcs); //remove from the running processes
+            executionCheck(queuedProcs,runningProcs); //check if theres is a process to run
         }
     }
     close(fd);

@@ -1,4 +1,5 @@
 #include "../headers/jobExecutorServer.h"
+#include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -79,7 +80,12 @@ int main(int argc, char** argv) {
     while(*(int*)semProc2 == 0);
     //Initialize Semaphores
     
-    mkfifo(namedFifo,0666);
+    if(mkfifo(namedFifo,0666) == -1) {
+        if(errno != EEXIST) {
+            printf("Error creating pipe.\n");
+            exit(1);
+        }
+    }
     int fd = open(namedFifo,O_WRONLY);
     size_t total_length = 0;
     for (int i = 1; i < argc; i++) {
@@ -108,15 +114,13 @@ int main(int argc, char** argv) {
         read(sd,buff,*bytes+5);
         printf("Server responded with <%s>\n",buff);
         close(sd);
+        exit(0);
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
         
         *bytes = strlen(concatenated);
         if(*(int*)semProc1 != 1) sem_post(semProc1);
-    } else if(strncmp(argv[1],"stop",4) == 0) {
-        write(fd,concatenated,strlen(concatenated));
-        *bytes = strlen(concatenated);
-        if(*(int*)semProc1 != 1) sem_post(semProc1);
+        exit(0);
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){
         if(argc < 3) {
             printf("Usage: jobCommander setConcurrency <number>\n");
@@ -129,16 +133,15 @@ int main(int argc, char** argv) {
             close(fd);
             return 1;
         }
-        write(fd,concatenated,strlen(concatenated));
-        if(*(int*)semProc1 != 1) sem_post(semProc1);
-    } else if(strncmp(argv[1],"poll",4) == 0) {
-        write(fd,concatenated,strlen(concatenated));  
-        if(*(int*)semProc1 != 1) sem_post(semProc1);
-    } else {
+    } else if (strncmp(argv[1],"poll",4) == 0) {
+    } else if (strncmp(argv[1],"stop",4) == 0) {
+    }else {
         printf("Invalid argument.\n");
         exit(1);
     }
-        // printf("====> %s\n",argv[2]);
+        *bytes = strlen(concatenated);
+    if(*(int*)semProc1 != 1) sem_post(semProc1);
+    write(fd,concatenated,strlen(concatenated));  
     close(fd);
     return 0;
 }
