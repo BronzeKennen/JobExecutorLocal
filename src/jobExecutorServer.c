@@ -122,23 +122,29 @@ void pqPrint(pQueue q,int mode) {
         if(!s) return;
         runningJobs* data = (runningJobs*)s->data;
         printf("==> %s,%d\n",data->jobId,data->pid);
-        for(int i = 1; i <= queue; i++) {
+        int i =0;
+        while(s) {
             s = s->next;
             if(!s) break;
             data = (runningJobs*)s->data;
             printf("==> %s,%d\n",data->jobId,data->pid);
+            if(i==5) break;
+            i++;
         }
     } else{
         printf("PRINTING QUEUED JOBS\n");
         pqNode s = q->first;
         if(!s) return;
         jProperties* data = (jProperties*)s->data;
+        int i = 1;
         printf("1, %s,%s\n",data->job,data->jobId);
-        for(int i = 1; i <= queue; i++) {
+        while(s) {
             s = s->next;
             if(!s) break;
             data = (jProperties*)s->data;
             printf("%d: %s,%s\n",i+1,data->job,data->jobId);
+            if(i==5) break;
+            i++;
         }
     }
 }
@@ -209,7 +215,6 @@ void executionCheck(pQueue q, pQueue curRunning) {
     if(running < concurrency) {
         pqNode toExec = pqGetFirst(q);
         if(!toExec) return;
-
         jProperties *data = (jProperties*)toExec->data;
         runningJobs *p =malloc(sizeof(runningJobs));
         p->jobId = malloc(strlen(data->jobId));
@@ -231,8 +236,12 @@ int jobStop(char* jobId, pQueue q,int m) {
     if(!toFind) {
         return -1;
     }
-    pqRemove(toFind,q);
-
+    if(!m) {
+        runningJobs* data = (runningJobs*)toFind->data;
+        kill(data->pid,SIGKILL);
+    } else {
+        pqRemove(toFind,q);
+    }
 }
 
 int serverClose() {
@@ -323,7 +332,7 @@ int main(int argc, char** argv) {
                     
                     if(pqFindJob(buf+5,queuedProcs) == NULL) {
                         if(pqFindProc2(buf+5,runningProcs) == NULL) {
-                            printf("Job id not found.\n");
+                            printf("id %s not found.\n",(buf+5));
                         } else {
                             jobStop(buf+5,runningProcs,0);
                         }
@@ -344,8 +353,12 @@ int main(int argc, char** argv) {
         }
         pid_t test = waitpid(0,&status,WNOHANG); //check if a process has finished
         if(test && test != -1) { 
+            pqPrint(runningProcs,0);
+            pqPrint(queuedProcs,1);
             running--; //make space for another process to run
-            pqRemove(pqFindProc(test,runningProcs),runningProcs); //remove from the running processes
+            pqNode node = pqFindProc(test,runningProcs);
+            runningJobs* data = (runningJobs*)node->data;
+            pqRemove(node,runningProcs); //remove from the running processes
             executionCheck(queuedProcs,runningProcs); //check if theres is a process to run
         }
     }

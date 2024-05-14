@@ -18,7 +18,9 @@ void pqPopFirst(pQueue q) {
         return;
     }
     if(q->first->next) {
+    //    printf("%p,%p\n",q->first,q->first->next);
        q->first = q->first->next;
+    //    printf("AFTER %p,%p\n",q->first,q->first->next);
     } else {
         free(q->first);
         q->first = NULL;
@@ -35,15 +37,15 @@ void pqRemove(pqNode node, pQueue q) {
        return;
     } 
     pqNode s = q->first->next;
-    if(!s) return;
-    for(int i = 0; i < q->size-1; i++) {
+    while (s) {
         if(s == node) {
             f->next = s->next;
+            q->size--;
+            return;
         }
         f = f->next;
         s = s->next;
     }
-    q->size--;
 }
 void insert(void* new, pQueue q) {
 
@@ -56,9 +58,9 @@ void insert(void* new, pQueue q) {
         q->last->data = new;
         //Initialize first and last nodes
     } else if(q->size == 1) {
-        q->last->data = new;
         q->first->next = malloc(sizeof(*q->first->next));
-        q->first->next = q->last;
+        q->first->next->data = new;
+        q->last = q->first->next;
         //second element is last on list, and next one after first
     } else  {    
         q->last->next = malloc(sizeof(*q->last->next));
