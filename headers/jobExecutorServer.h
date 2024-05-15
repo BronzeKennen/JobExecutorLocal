@@ -6,14 +6,14 @@ typedef struct job {
 } jProperties;
 
 typedef struct run {
-    int pid;
-    char* jobId;
+    int pid; //process id
+    char* jobId; // job_XX {XX} jobNumber
 } runningJobs;
 
 
-int serverInit();
-int serverClose();
+int serverInit(); //start server
+int serverClose(); //terminate server
 
-void issueJob(char*, pQueue);
+void issueJob(char*, pQueue); //give triplet
 void setConcurrency(int);
 int jobStop(char*,pQueue,int);

@@ -39,7 +39,7 @@ pqNode pqFindJob(char* jobId, pQueue q) {
         return NULL;
     }
     jProperties* data;
-    char* toCmp = strtok(jobId," ");
+    char* toCmp = strtok(jobId," "); //for some reason reasding the job has a space in the end and ruins my comparison so I remove that
     while(node) {
         data = (jProperties*)node->data;
         if(strcmp(toCmp,data->jobId) == 0) return node;
@@ -50,7 +50,7 @@ pqNode pqFindJob(char* jobId, pQueue q) {
     }
 }
 
-pqNode pqFindProc(int pid, pQueue q) {
+pqNode pqFindProc(int pid, pQueue q) {//find proc based on pid
     pqNode node = q->first;
     if(!node) {
         return NULL;
@@ -60,14 +60,14 @@ pqNode pqFindProc(int pid, pQueue q) {
 
     while(node) {
         data = (runningJobs*)node->data;
-        if(pid == data->pid) return node;
+        if(pid == data->pid) return node; 
         node = node->next;
     }
     if(!node) {
         return NULL;
     }
 }
-pqNode pqFindProc2(char* jobId,pQueue q) { 
+pqNode pqFindProc2(char* jobId,pQueue q) { //find proc based on jobId
     pqNode node = q->first;
     if(!node) {
         return NULL;
@@ -95,13 +95,13 @@ int serverInit(int shmid) {
         serverInit(shmid);
         return 1;
     } 
-    if (flock(fp, LOCK_EX) == -1) {
+    if (flock(fp, LOCK_EX) == -1) { //mutual exclusion of file poening
         perror("Error locking file");
         close(fp);
         return -1;
     }
     char strpid[20];
-    snprintf(strpid,sizeof(strpid),"%d\n%d",pid,shmid);
+    snprintf(strpid,sizeof(strpid),"%d\n%d",pid,shmid); //write pid and shared memory id
     int err = write(fp,strpid,strlen(strpid));
     flock(fp,LOCK_UN);
 
@@ -116,7 +116,7 @@ void setConcurrency(int n) {
     concurrency = n;
 }
 
-void pqPrint(pQueue q,int mode) {
+void pqPrint(pQueue q,int mode) { //mode 0 queued mode 1 running
     if(!mode) {
         pqNode s = q->first;
         if(!s) {
@@ -207,7 +207,7 @@ void runQueueItem(pid_t* pid,char* job) {
 
     char* toTok = strdup(job);
     close(fd);
-    int argCount =0;
+    int argCount =0; //count num of arguments to malloc
     char* tok = strtok(toTok," ");
     while(tok) {
         argCount++;
@@ -216,6 +216,7 @@ void runQueueItem(pid_t* pid,char* job) {
     char** args =malloc((argCount + 1) * sizeof(char*));
 
 
+    //add every argument to an array to use on execvp
     tok = strtok(job," ");
     int i = 0;
     while(tok) {
@@ -237,24 +238,24 @@ void executionCheck(pQueue q, pQueue curRunning) {
     int status;
     pid_t pid;
     if(!queue) return;
-    if(running < concurrency) {
-        pqNode toExec = pqGetFirst(q);
+    if(running < concurrency) { //is there space to run
+        pqNode toExec = pqGetFirst(q); //get first process
         if(!toExec) return;
         jProperties *data = (jProperties*)toExec->data;
-        runningJobs *p =malloc(sizeof(runningJobs));
+        runningJobs *p =malloc(sizeof(runningJobs)); //make the queued job a running job with the different struct
         p->jobId = malloc(strlen(data->jobId));
         strncpy(p->jobId,data->jobId,strlen(data->jobId));
-        pqPopFirst(q);
+        pqPopFirst(q); //remove the queued
         queue--;
         running++;
-        insert(p,curRunning);
-        runQueueItem(&pid,data->job);
-        p->pid = pid;
+        insert(p,curRunning); //and insert it as running
+        runQueueItem(&pid,data->job); //fork-exec the job
+        p->pid = pid; //when possible set the pid
     } 
 }
 
 
-int jobStop(char* jobId, pQueue q,int m) {
+int jobStop(char* jobId, pQueue q,int m) { //if m != 0 stop a queued job otherwise stop a running job
     pqNode toFind;
     if(m) toFind = pqFindJob(jobId,q);
     else toFind = pqFindProc2(jobId,q);
@@ -264,7 +265,6 @@ int jobStop(char* jobId, pQueue q,int m) {
     if(!m) {
         runningJobs* data = (runningJobs*)toFind->data;
         kill(data->pid,SIGKILL);
-        printf("KILLED %d\n",data->pid);
     } else {
         pqRemove(toFind,q);
     }
@@ -357,8 +357,8 @@ int main(int argc, char** argv) {
                     
                 } else if(strncmp(buf,"stop",4) == 0) {
                     
-                    if(pqFindJob(buf+5,queuedProcs) == NULL) {
-                        if(pqFindProc2(buf+5,runningProcs) == NULL) {
+                    if(pqFindJob(buf+5,queuedProcs) == NULL) { //is it a queued job?
+                        if(pqFindProc2(buf+5,runningProcs) == NULL) { //is it a running job?
                             printf("id %s not found.\n",(buf+5));
                         } else {
                             jobStop(buf+5,runningProcs,0);
@@ -385,7 +385,6 @@ int main(int argc, char** argv) {
             printf("PROC FINISHED\n");
             running--; //make space for another process to run
             pqNode node = pqFindProc(test,runningProcs);
-            // runningJobs* data = (runningJobs*)node->data;
             pqRemove(node,runningProcs); //remove from the running processes
             executionCheck(queuedProcs,runningProcs); //check if theres is a process to run
         }

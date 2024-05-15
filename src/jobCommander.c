@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
         if(*(int*)semProc1 != 1) sem_post(semProc1);
-        sem_wait(semProc2);
+        sem_wait(semProc2); //mutual exclusion of shared memory
         *bytes = strlen(concatenated);
         sem_post(semProc2);
         int sd = open(serverFifo,O_RDONLY );
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
         if(*(int*)semProc1 != 1) sem_post(semProc1);
-        sem_wait(semProc2);
+        sem_wait(semProc2); //mutual exclusion of shared memory
         *bytes = strlen(concatenated);
         sem_post(semProc2);
         int sd = open(serverFifo, O_RDONLY);
