@@ -26,6 +26,7 @@ char* execFifo = "/tmp/execfifo";
 const char* filename = "jobExecutorServer.txt";
 
 int execfd,sd,fd;
+int* bytes;
 
 // Table with all processes (RUNNING/QUEUED)
 // Stack with queued processes only (POP ONLY FIRST)
@@ -117,36 +118,60 @@ void setConcurrency(int n) {
 
 void pqPrint(pQueue q,int mode) {
     if(!mode) {
-        printf("PRINTING RUNNING JOBS\n");
         pqNode s = q->first;
-        if(!s) return;
+        if(!s) {
+            printf("No running jobs.\n");
+            return;
+        }
+        printf("=Running=\n");
         runningJobs* data = (runningJobs*)s->data;
-        printf("==> %s,%d\n",data->jobId,data->pid);
-        int i =0;
+        char buf[(strlen(data->jobId)+9)*q->size];
+        char another[strlen(data->jobId)+9];
+        sprintf(buf,"%s,%d\n",data->jobId,data->pid);
         while(s) {
             s = s->next;
             if(!s) break;
             data = (runningJobs*)s->data;
-            printf("==> %s,%d\n",data->jobId,data->pid);
-            if(i==5) break;
-            i++;
+            sprintf(another,"%s,%d\n",data->jobId,data->pid);
+            strcat(buf,another);
         }
+        int sd = open(serverFifo,O_WRONLY);
+        sem_wait(semProc2);
+        *bytes = sizeof(buf);
+        sem_post(semProc2);
+        write(sd,buf,*bytes);
+        memset(buf,0,((strlen(data->jobId)+9)*q->size));
+        memset(another,0,((strlen(data->jobId)+9)*q->size));
+
     } else{
-        printf("PRINTING QUEUED JOBS\n");
         pqNode s = q->first;
-        if(!s) return;
+        if(!s) {
+            printf("No queued jobs.\n");
+            return;
+        }
+        printf("=Queued=\n");
         jProperties* data = (jProperties*)s->data;
+        char buf[(strlen(data->jobId)+9+strlen(data->job))*q->size];
+        char another[strlen(data->jobId)+9+strlen(data->job)];
+        sprintf(buf,"%s,%s,1\n",data->jobId,data->job);
         int i = 1;
-        printf("1, %s,%s\n",data->job,data->jobId);
         while(s) {
             s = s->next;
             if(!s) break;
             data = (jProperties*)s->data;
-            printf("%d: %s,%s\n",i+1,data->job,data->jobId);
-            if(i==5) break;
+            sprintf(another,"%s,%s,%d\n",data->jobId,data->job,i+1);
+            strcat(buf,another);
             i++;
         }
+        int sd = open(serverFifo,O_WRONLY);
+        sem_wait(semProc2);
+        *bytes = sizeof(buf);
+        sem_post(semProc2);
+        write(sd,buf,*bytes);
+        memset(buf,0,(strlen(data->jobId)+9+strlen(data->job))*q->size);
+        memset(another,0,(strlen(data->jobId)+9+strlen(data->job)));
     }
+    close(sd);
 }
 
 
@@ -222,8 +247,6 @@ void executionCheck(pQueue q, pQueue curRunning) {
         pqPopFirst(q);
         queue--;
         running++;
-        printf("<%s,%d>\n",p->jobId,p->pid);
-        printf("<%s,%s,%d>\n",data->jobId,data->job,data->qPos);
         insert(p,curRunning);
         runQueueItem(&pid,data->job);
         p->pid = pid;
@@ -274,7 +297,7 @@ int main(int argc, char** argv) {
         perror("Failed to initialize semaphore");
     } 
     semProc1 +=2;
-    int* bytes = (int*)semProc1; //Commander tells server how many bytes to read
+    bytes = (int*)semProc1; //Commander tells server how many bytes to read
     semProc1 -=2;
 
     semProc1++;
@@ -338,12 +361,12 @@ int main(int argc, char** argv) {
                         if(pqFindProc2(buf+5,runningProcs) == NULL) {
                             printf("id %s not found.\n",(buf+5));
                         } else {
-                            sem_wait(semProc2);
                             jobStop(buf+5,runningProcs,0);
-                            sem_post(semProc2);
+                            printf("%s stopped succesfully\n",(buf+5));
                         }
                     } else {
                         jobStop(buf+5,queuedProcs,1);
+                        printf("%s stopped succesfully\n",(buf+5));
                     }
                 
                 } else if(strncmp(buf,"poll",4) == 0) { 
@@ -364,8 +387,6 @@ int main(int argc, char** argv) {
             pqNode node = pqFindProc(test,runningProcs);
             // runningJobs* data = (runningJobs*)node->data;
             pqRemove(node,runningProcs); //remove from the running processes
-            pqPrint(runningProcs,0);
-            pqPrint(queuedProcs,1);
             executionCheck(queuedProcs,runningProcs); //check if theres is a process to run
         }
     }

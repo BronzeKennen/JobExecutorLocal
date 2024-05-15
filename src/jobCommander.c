@@ -107,7 +107,9 @@ int main(int argc, char** argv) {
         concatenated[current_pos - 1] = '\0';
         write(fd,concatenated,strlen(concatenated));
         if(*(int*)semProc1 != 1) sem_post(semProc1);
+        sem_wait(semProc2);
         *bytes = strlen(concatenated);
+        sem_post(semProc2);
         int sd = open(serverFifo,O_RDONLY );
         char buff[*bytes+5];
         memset(buff,0,*bytes+5);
@@ -118,7 +120,9 @@ int main(int argc, char** argv) {
     } else if(strncmp(argv[1],"exit",4) == 0) {
         write(fd,"1",strlen("1")+1);
         
+        sem_wait(semProc2);
         *bytes = strlen(concatenated);
+        sem_post(semProc2);
         if(*(int*)semProc1 != 1) sem_post(semProc1);
         exit(0);
     } else if(strncmp(argv[1],"setConcurrency",14) == 0){
@@ -134,12 +138,32 @@ int main(int argc, char** argv) {
             return 1;
         }
     } else if (strncmp(argv[1],"poll",4) == 0) {
+        concatenated[current_pos - 1] = '\0';
+        write(fd,concatenated,strlen(concatenated));
+        if(*(int*)semProc1 != 1) sem_post(semProc1);
+        sem_wait(semProc2);
+        *bytes = strlen(concatenated);
+        sem_post(semProc2);
+        int sd = open(serverFifo, O_RDONLY);
+        char buff[*bytes];
+        memset(buff,0,*bytes);
+        read(sd,buff,*bytes);
+        if(strlen(buff) == 1) {
+            printf("No jobs to print\n");
+        } else {
+            printf("%s\n",buff);
+        }
+        close(sd);
+        exit(0);
+        
     } else if (strncmp(argv[1],"stop",4) == 0) {
     }else {
         printf("Invalid argument.\n");
         exit(1);
     }
-        *bytes = strlen(concatenated);
+    sem_wait(semProc2);
+    *bytes = strlen(concatenated);
+    sem_post(semProc2);
     if(*(int*)semProc1 != 1) sem_post(semProc1);
     write(fd,concatenated,strlen(concatenated));  
     close(fd);
