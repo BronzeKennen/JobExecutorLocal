@@ -220,9 +220,11 @@ void executionCheck(pQueue q, pQueue curRunning) {
         p->jobId = malloc(strlen(data->jobId));
         strncpy(p->jobId,data->jobId,strlen(data->jobId));
         pqPopFirst(q);
-        insert(p,curRunning);
         queue--;
         running++;
+        printf("<%s,%d>\n",p->jobId,p->pid);
+        printf("<%s,%s,%d>\n",data->jobId,data->job,data->qPos);
+        insert(p,curRunning);
         runQueueItem(&pid,data->job);
         p->pid = pid;
     } 
@@ -239,9 +241,11 @@ int jobStop(char* jobId, pQueue q,int m) {
     if(!m) {
         runningJobs* data = (runningJobs*)toFind->data;
         kill(data->pid,SIGKILL);
+        printf("KILLED %d\n",data->pid);
     } else {
         pqRemove(toFind,q);
     }
+    return 0;
 }
 
 int serverClose() {
@@ -334,7 +338,9 @@ int main(int argc, char** argv) {
                         if(pqFindProc2(buf+5,runningProcs) == NULL) {
                             printf("id %s not found.\n",(buf+5));
                         } else {
+                            sem_wait(semProc2);
                             jobStop(buf+5,runningProcs,0);
+                            sem_post(semProc2);
                         }
                     } else {
                         jobStop(buf+5,queuedProcs,1);
@@ -353,12 +359,13 @@ int main(int argc, char** argv) {
         }
         pid_t test = waitpid(0,&status,WNOHANG); //check if a process has finished
         if(test && test != -1) { 
-            pqPrint(runningProcs,0);
-            pqPrint(queuedProcs,1);
+            printf("PROC FINISHED\n");
             running--; //make space for another process to run
             pqNode node = pqFindProc(test,runningProcs);
-            runningJobs* data = (runningJobs*)node->data;
+            // runningJobs* data = (runningJobs*)node->data;
             pqRemove(node,runningProcs); //remove from the running processes
+            pqPrint(runningProcs,0);
+            pqPrint(queuedProcs,1);
             executionCheck(queuedProcs,runningProcs); //check if theres is a process to run
         }
     }
